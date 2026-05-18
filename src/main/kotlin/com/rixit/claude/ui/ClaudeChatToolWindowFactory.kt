@@ -1,14 +1,23 @@
 package com.rixit.claude.ui
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
+import java.awt.AWTEvent
+import java.awt.Component
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
+import java.awt.event.MouseEvent
+import javax.swing.SwingUtilities
 
 /**
  * Creates the Claude AI Assistant tool window. Each chat session lives in its own
@@ -26,6 +35,50 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
 
         // "+" button in the tool window header to spawn additional chats.
         toolWindow.setTitleActions(listOf(NewChatTitleAction(project)))
+
+        // Middle-mouse on a tab header closes that chat.
+        installMiddleClickClose(toolWindow)
+    }
+
+    /**
+     * Wires up middle-mouse-button closing on chat tab headers.
+     *
+     * The IntelliJ Platform doesn't expose middle-click-close for tool window
+     * content tabs, so we listen at the AWT event-queue level for MOUSE_PRESSED
+     * with button 2 inside our tool window, walk up the component tree to find
+     * the tab label, and ask the [Content] it represents to close itself. The
+     * tab-label class is accessed reflectively to avoid a hard dependency on
+     * an internal package (its name has been stable for years, but we degrade
+     * gracefully if it isn't found).
+     */
+    private fun installMiddleClickClose(toolWindow: ToolWindow) {
+        val listener = AWTEventListener { event ->
+            if (event !is MouseEvent) return@AWTEventListener
+            if (event.id != MouseEvent.MOUSE_PRESSED) return@AWTEventListener
+            if (event.button != MouseEvent.BUTTON2) return@AWTEventListener
+
+            val src = event.source as? Component ?: return@AWTEventListener
+            if (!SwingUtilities.isDescendingFrom(src, toolWindow.component)) return@AWTEventListener
+
+            var c: Component? = src
+            while (c != null) {
+                if (c.javaClass.simpleName == "ContentTabLabel") {
+                    val content = try {
+                        c.javaClass.getMethod("getContent").invoke(c) as? Content
+                    } catch (_: Exception) { null }
+                    if (content != null && content.isCloseable) {
+                        toolWindow.contentManager.removeContent(content, true)
+                        event.consume()
+                    }
+                    return@AWTEventListener
+                }
+                c = c.parent
+            }
+        }
+        Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.MOUSE_EVENT_MASK)
+        Disposer.register(toolWindow.disposable, Disposable {
+            Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
+        })
     }
 
     companion object {
@@ -36,60 +89,4 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
          * Returns the freshly created panel so callers can act on it (e.g.
          * attach a file immediately).
          */
-        fun addNewChatTab(project: Project, toolWindow: ToolWindow): ClaudeChatPanel {
-            val cm = toolWindow.contentManager
-            val panel = ClaudeChatPanel(project)
-            val label = nextChatLabel(toolWindow)
-            val content = ContentFactory.getInstance().createContent(panel, label, false)
-            content.isCloseable = true
-            cm.addContent(content)
-            cm.setSelectedContent(content, true)
-            return panel
-        }
-
-        /**
-         * The panel of the currently selected tab, or null if the tool window
-         * has no tabs (e.g. the user closed them all).
-         */
-        fun getActivePanel(project: Project): ClaudeChatPanel? {
-            val tw = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)
-                ?: return null
-            val selected = tw.contentManager.selectedContent ?: return null
-            return selected.component as? ClaudeChatPanel
-        }
-
-        /**
-         * Ensures there's at least one tab and returns the active panel. Used
-         * by external actions that need somewhere to attach a file.
-         */
-        fun ensureActivePanel(project: Project): ClaudeChatPanel? {
-            val tw = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)
-                ?: return null
-            return getActivePanel(project) ?: addNewChatTab(project, tw)
-        }
-
-        private fun nextChatLabel(toolWindow: ToolWindow): String {
-            // Pick the lowest "Chat N" not already in use so closing/reopening
-            // tabs doesn't keep growing the number forever.
-            val used = toolWindow.contentManager.contents
-                .mapNotNull { it.displayName }
-                .mapNotNull { Regex("^Chat (\\d+)$").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
-                .toSet()
-            var n = 1
-            while (n in used) n++
-            return "Chat $n"
-        }
-    }
-}
-
-/** Header action: adds a fresh chat tab. */
-private class NewChatTitleAction(private val project: Project) :
-    AnAction("New Chat", "Start a new chat session", AllIcons.General.Add) {
-
-    override fun actionPerformed(e: AnActionEvent) {
-        val tw = ToolWindowManager.getInstance(project)
-            .getToolWindow(ClaudeChatToolWindowFactory.TOOL_WINDOW_ID) ?: return
-        ClaudeChatToolWindowFactory.addNewChatTab(project, tw)
-    }
-
-    override fun getActionUpdateThread(): ActionUpdateThread = A
+        fun addNewChatTab(project: Project, toolWindow: ToolWindow): ClaudeChatPanel
