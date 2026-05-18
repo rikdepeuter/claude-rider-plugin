@@ -4,6 +4,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
@@ -18,10 +19,14 @@ import com.rixit.claude.api.ClaudeApiClient
 import com.rixit.claude.context.EditorContextProvider
 import com.rixit.claude.settings.ClaudeSettings
 import java.awt.BorderLayout
+import java.awt.Color
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.Graphics
+import java.awt.Graphics2D
 import java.awt.GraphicsEnvironment
+import java.awt.RenderingHints
 import java.awt.event.ActionEvent
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.AbstractAction
@@ -77,14 +82,15 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     /**
      * Toggle buttons (sticky): while pressed, the attachment is included on
      * every send. The current file / selection is resolved at send time, so
-     * switching editors between sends works as you'd expect.
+     * switching editors between sends works as you'd expect. Visually they
+     * fill with the JetBrains accent blue when active.
      */
-    private val attachFileToggle = JToggleButton("Attach current file").apply {
-        toolTipText = "When on, the active file is attached on every send."
+    private val attachFileToggle: JToggleButton = AccentToggleButton("Attach current file").apply {
+        toolTipText = "Click to arm: the active file will be attached on every send. Click again to disarm."
         font = uiFont
     }
-    private val attachSelectionToggle = JToggleButton("Attach selection").apply {
-        toolTipText = "When on, the current editor selection is attached on every send."
+    private val attachSelectionToggle: JToggleButton = AccentToggleButton("Attach selection").apply {
+        toolTipText = "Click to arm: the current editor selection will be attached on every send. Click again to disarm."
         font = uiFont
     }
 
@@ -442,16 +448,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         revalidate(); repaint()
     }
 
-    // ---- streaming state machine -------------------------------------------------------
-
-    private fun startStreaming() {
-        streamingText = StringBuilder()
-        renderTranscript()
-    }
-
-    private fun appendStreamDelta(text: String) {
-        streamingText?.append(text)
-        renderTranscript()
-    }
-
- 
+    // ----

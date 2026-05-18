@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.5.1</h3>
+        <ul><li>Attach toggle buttons now paint with an accent-blue background when armed, so the on/off state is obvious in any theme.</li></ul>
         <h3>0.5.0</h3>
         <ul>
             <li>Compact toolbar: attach toggles (sticky, with on/off visual state) on the left, "more options" hamburger on the right.</li>
@@ -67,8 +69,4 @@
                 class="com.rixit.claude.actions.OpenChatAction"
                 text="Open Claude AI Assistant"
                 description="Focus the Claude chat tool window">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt K"/>
-        </action>
-
-        
+ 
