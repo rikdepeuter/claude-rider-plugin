@@ -38,6 +38,29 @@ run will:
 Then in Rider: *Settings → Plugins → ⚙ → Install Plugin from Disk…* and pick
 `plugin.zip`. Restart when prompted.
 
+### Auto-update from the local zip (one-time setup)
+
+Each build also writes an `updatePlugins.xml` next to `plugin.zip`. Point
+Rider at it once and from then on Rider will treat new versions of the
+plugin like marketplace updates — checking on startup (and periodically),
+offering or auto-applying them as you configure.
+
+1. In Rider, open *Settings → Plugins → ⚙ (gear) → Manage Plugin Repositories…*.
+2. Add this URL (adjust the path to match your checkout):
+
+   ```
+   file:///C:/Users/RikDePeuter/Source/claude-chat-rider-plugin/updatePlugins.xml
+   ```
+
+3. Click OK twice. Rider re-scans plugin repos.
+4. Make sure *Settings → Appearance & Behavior → System Settings → Updates*
+   has **Check IDE updates** + **Use the same settings for plugin updates**
+   (or just plugin updates) enabled.
+
+After that, leave `auto-build.bat` running. Every time I push a version
+bump and the build refreshes `plugin.zip` + `updatePlugins.xml`, Rider
+will see a newer version on its next check and prompt to install.
+
 ### Auto-build mode (recommended while iterating)
 
 Run `auto-build.bat` once in a terminal and leave it open. It does the
@@ -111,26 +134,4 @@ outside the project are rejected. There's no `delete_file`, no `run_command`
 — this is an editor, not a shell.
 
 **Mode caveats.** Agent mode is non-streaming (responses arrive in chunks
-between tool calls). Chat mode (the default, with agent mode off) still
-streams as before. Toggle per chat tab — one tab can be a long agent
-session while another stays as plain conversation.
-
-## What it doesn't do (yet)
-
-- **No conversation history across IDE restarts.** Clear by design — clears
-  every time the panel is recreated.
-- **No request cancellation.** Once a stream starts there's no Stop button;
-  it runs to completion or fails.
-- **Tiny markdown renderer.** Only fenced code blocks and inline `code` are
-  styled; everything else is plain text. During streaming the in-flight bubble
-  is rendered as plain escaped text (so half-open code fences don't break the
-  regex); markdown styling is applied once the response completes.
-
-These are the obvious next steps if you want to extend it.
-
-## Streaming
-
-Replies stream via Anthropic's SSE endpoint. The chat panel shows a growing
-"Claude:" bubble with a cursor (`▌`) while text arrives. If the request fails
-mid-stream the last user turn is dropped from history so you can edit and
-retry.
+between tool calls). Chat mode (the 

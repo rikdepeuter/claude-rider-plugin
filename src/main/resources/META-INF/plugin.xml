@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.6.0</h3>
+        <ul><li>Build now emits updatePlugins.xml next to plugin.zip. Add the file:// URL to Rider's plugin repositories once and Rider will auto-update the plugin on startup whenever a new version is built.</li></ul>
         <h3>0.5.3</h3>
         <ul><li>Closing the last chat now auto-spawns a fresh empty chat, so the tool window can't get stuck in the "Nothing to show" state.</li></ul>
         <h3>0.5.2</h3>
@@ -60,7 +62,4 @@
                     factoryClass="com.rixit.claude.ui.ClaudeChatToolWindowFactory"
                     icon="AllIcons.Toolwindows.ToolWindowMessages"/>
 
-        <applicationConfigurable parentId="tools"
-                                 instance="com.rixit.claude.settings.ClaudeSettingsConfigurable"
-                                 id="com.rixit.claude.settings"
-                                
+  
