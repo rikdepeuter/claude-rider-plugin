@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.2</h3>
+        <ul><li>Ctrl+Alt+K (or Tools -> Open Claude AI Assistant) is now a recovery action: opens the tool window AND seeds a fresh chat tab if it's empty. Works even when the tool window factory hasn't run for some reason.</li></ul>
         <h3>0.7.1</h3>
         <ul><li>Startup activity re-seeds the tool window with "Chat 1" if it's ever shown empty (e.g. after a plugin update from an older version left it in the 0-contents state). Factory also no longer double-seeds when it does run.</li></ul>
         <h3>0.7.0</h3>
@@ -51,9 +53,4 @@
         <h3>0.2.0</h3>
         <ul>
             <li>Agent mode: Claude can read, edit, and create files in the project (per-write confirmation with diff preview).</li>
-            <li>Auto-approve writes for 5min / 30min / 1hr / until the chat is closed.</li>
-            <li>Multiple independent chat tabs via the "+" button.</li>
-            <li>Per-chat model selector with sticky "last used" memory.</li>
-            <li>Reply streaming.</li>
-        </ul>
-  
+            <li>Auto-approve writes fo
