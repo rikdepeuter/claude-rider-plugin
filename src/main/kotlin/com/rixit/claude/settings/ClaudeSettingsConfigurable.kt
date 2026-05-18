@@ -11,7 +11,7 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * Settings page rendered under Settings &rarr; Tools &rarr; Claude Chat.
+ * Settings page rendered under Settings &rarr; Tools &rarr; Claude AI Assistant.
  */
 class ClaudeSettingsConfigurable : Configurable {
 
@@ -28,7 +28,7 @@ class ClaudeSettingsConfigurable : Configurable {
 
     private var rootPanel: JPanel? = null
 
-    override fun getDisplayName(): String = "Claude Chat"
+    override fun getDisplayName(): String = "Claude AI Assistant"
 
     override fun createComponent(): JComponent {
         rootPanel = FormBuilder.createFormBuilder()
@@ -73,5 +73,4 @@ class ClaudeSettingsConfigurable : Configurable {
     }
 
     private fun modelText(): String =
-        (modelCombo.editor?.item ?: modelCombo.selectedItem)?.toString()?.trim().orEmpty()
-}
+        (modelCombo.editor?.item ?: modelCombo.selectedItem)?.toString()?.tri

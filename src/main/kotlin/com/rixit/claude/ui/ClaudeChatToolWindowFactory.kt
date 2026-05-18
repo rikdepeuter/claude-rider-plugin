@@ -11,15 +11,15 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.content.ContentFactory
 
 /**
- * Creates the Claude Chat tool window. Each chat session lives in its own
+ * Creates the Claude AI Assistant tool window. Each chat session lives in its own
  * tab, with its own conversation state. Use the "+" icon in the tool
  * window header to start a fresh chat; tabs are closable individually.
  */
 class ClaudeChatToolWindowFactory : ToolWindowFactory {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        toolWindow.stripeTitle = "Claude Chat"
-        toolWindow.title = "Claude Chat"
+        toolWindow.stripeTitle = "Claude AI Assistant"
+        toolWindow.title = "Claude AI Assistant"
 
         // Seed with one empty chat so the window isn't blank on first open.
         addNewChatTab(project, toolWindow)
@@ -92,5 +92,4 @@ private class NewChatTitleAction(private val project: Project) :
         ClaudeChatToolWindowFactory.addNewChatTab(project, tw)
     }
 
-    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
-}
+    override fun getActionUpdateThread(): ActionUpdateThread = A

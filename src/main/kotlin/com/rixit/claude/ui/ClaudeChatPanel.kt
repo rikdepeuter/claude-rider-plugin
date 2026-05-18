@@ -5,6 +5,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.rixit.claude.agent.AgentEventHandler
+import com.rixit.claude.agent.AgentLoop
+import com.rixit.claude.agent.ToolResult
+import com.rixit.claude.agent.ConfirmWriteDialog
+import com.rixit.claude.agent.WriteConfirmer
+import com.rixit.claude.agent.WriteRequest
 import com.rixit.claude.api.ApiMessage
 import com.rixit.claude.api.ClaudeApiClient
 import com.rixit.claude.context.EditorContextProvider
@@ -13,24 +19,34 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.event.ActionEvent
+import java.util.concurrent.atomic.AtomicReference
 import javax.swing.AbstractAction
 import javax.swing.JButton
+import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JTextPane
 import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
+import javax.swing.Timer
 
 /**
- * The main chat surface inside the Claude tool window.
+ * The main chat surface inside a Claude tool window tab.
  *
- *  - Transcript on top (HTML JTextPane so we can render code blocks)
- *  - Toolbar with attach / clear buttons
+ *  - Transcript on top (HTML JTextPane so we can render code blocks).
+ *  - Toolbar: model selector, agent toggle, attach / clear.
+ *  - Optional yellow banner shows auto-approve state when agent writes are
+ *    being auto-applied for a window of time.
  *  - Input box at the bottom; Ctrl+Enter sends.
  *
- * Conversation state lives entirely in this panel — clearing the panel
- * resets the conversation so the next message starts fresh.
+ *  Two send modes:
+ *   - **Chat mode (default).** Streams replies via SSE; no tool use.
+ *   - **Agent mode.** Non-streaming; Claude can read/edit/write files via
+ *     [AgentLoop]. Writes are gated by [ConfirmWriteDialog] unless the user
+ *     has opted in to auto-approval for a duration.
+ *
+ *  Conversation state is in-memory per panel — closing the tab discards it.
  */
 class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
@@ -47,20 +63,22 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val attachFileButton = JButton("Attach current file")
     private val attachSelectionButton = JButton("Attach selection")
     private val clearButton = JButton("Clear")
+    private val agentModeCheckBox = JCheckBox("Agent mode").apply {
+        toolTipText =
+            "When on, Claude can read and edit files in this project. " +
+                "Every write requires your approval (with diff preview)."
+    }
 
-    /**
-     * Model for THIS chat session. Initialized from the global "last used"
-     * setting; changing it updates that global so the next new chat picks it
-     * up as the default.
-     */
+    /** Banner showing auto-approve state. Visibility flips with the timer. */
+    private val autoApproveBanner = AutoApproveBanner { cancelAutoApprove() }
+
+    /** Snapshot of the per-session model. */
     private var sessionModel: String = ClaudeSettings.getInstance().state.model
 
     private val modelCombo: JComboBox<String> =
         JComboBox(ClaudeSettings.SUGGESTED_MODELS.toTypedArray()).apply {
             isEditable = true
             selectedItem = sessionModel
-            // ActionListener fires once per user-driven change (unlike
-            // ItemListener which fires twice).
             addActionListener {
                 val v = (editor?.item ?: selectedItem)?.toString()?.trim().orEmpty()
                 if (v.isNotEmpty() && v != sessionModel) {
@@ -73,21 +91,26 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val history = mutableListOf<ApiMessage>()
     private val pendingAttachments = mutableListOf<String>()
 
-    /** Non-null while an assistant reply is streaming in. */
+    /** Non-null while a chat-mode reply is streaming in. */
     private var streamingText: StringBuilder? = null
+
+    /** Until when agent-mode writes are auto-approved (epoch millis), or null. */
+    private var autoApproveUntilMillis: Long? = null
+    private val autoApproveTicker = Timer(1_000) { refreshAutoApproveBanner() }.apply { isRepeats = true }
 
     init {
         layout = BorderLayout()
 
+        add(autoApproveBanner.component, BorderLayout.NORTH)
         add(JBScrollPane(transcript).apply { preferredSize = Dimension(400, 400) }, BorderLayout.CENTER)
         add(buildSouth(), BorderLayout.SOUTH)
+        autoApproveBanner.setVisible(false)
 
         sendButton.addActionListener { onSend() }
         attachFileButton.addActionListener { attachCurrentFile() }
         attachSelectionButton.addActionListener { attachSelection() }
         clearButton.addActionListener { onClear() }
 
-        // Ctrl/Cmd + Enter sends.
         val sendKey = "claude-send"
         input.inputMap.put(KeyStroke.getKeyStroke("control ENTER"), sendKey)
         input.inputMap.put(KeyStroke.getKeyStroke("meta ENTER"), sendKey)
@@ -97,9 +120,10 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         appendHtml(
             "<p style='color:gray;'>Hi! Set your Anthropic API key under " +
-                "<i>Settings &rarr; Tools &rarr; Claude Chat</i>. " +
+                "<i>Settings &rarr; Tools &rarr; Claude AI Assistant</i>. " +
                 "Press <b>Ctrl+Enter</b> to send. " +
-                "Attach the current file or selection with the buttons above.</p>"
+                "Turn on <b>Agent mode</b> to let Claude read and edit files in this project " +
+                "(every write needs your confirmation).</p>"
         )
     }
 
@@ -107,6 +131,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 4)).apply {
             add(JBLabel("Model:"))
             add(modelCombo)
+            add(agentModeCheckBox)
             add(attachFileButton)
             add(attachSelectionButton)
             add(clearButton)
@@ -134,7 +159,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         val payload = "Attached file: `${ctx.filePath}`\n\n```$lang\n${ctx.fileText}\n```"
         pendingAttachments += payload
         appendHtml(
-            "<p style='color:gray;'>📎 Attached current file: ${escape(ctx.filePath ?: "")} " +
+            "<p style='color:gray;'>Attached current file: ${escape(ctx.filePath ?: "")} " +
                 "(${ctx.fileText.length} chars)</p>"
         )
     }
@@ -150,7 +175,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             "```$lang\n${ctx.selection}\n```"
         pendingAttachments += payload
         appendHtml(
-            "<p style='color:gray;'>📎 Attached selection " +
+            "<p style='color:gray;'>Attached selection " +
                 "(${ctx.selection.length} chars from ${escape(ctx.filePath ?: "?")})</p>"
         )
     }
@@ -161,6 +186,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         history.clear()
         pendingAttachments.clear()
         streamingText = null
+        cancelAutoApprove()
         transcriptHtml.clear()
         renderTranscript()
         appendHtml("<p style='color:gray;'>Conversation cleared.</p>")
@@ -179,8 +205,6 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         if (text.isNotEmpty()) parts += text
         val composed = parts.joinToString("\n\n")
 
-        // Render the user turn — but show attachments as a compact note,
-        // not their full content (which can be huge).
         val displayed = buildString {
             if (header != null) {
                 append("<i style='color:gray;'>").append(escape(header)).append("</i><br/>")
@@ -192,26 +216,30 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
         appendHtml("<p><b>You:</b><br/>$displayed</p>")
 
-        history += ApiMessage("user", composed)
+        history += ApiMessage.text("user", composed)
         pendingAttachments.clear()
         input.text = ""
         setBusy(true)
 
-        // onSend() is invoked from the EDT (button / key binding), so calling
-        // startStreaming() inline is fine — it primes the empty assistant bubble.
-        startStreaming()
-        // Snapshot the model at send-time so a mid-stream model change in the
-        // dropdown doesn't lie about which model produced the reply.
         val modelForRequest = sessionModel
+        if (agentModeCheckBox.isSelected) {
+            startAgentRun(modelForRequest)
+        } else {
+            startStreamRun(modelForRequest)
+        }
+    }
+
+    // ---- chat (streaming) mode ---------------------------------------------------------
+
+    private fun startStreamRun(model: String) {
+        startStreaming()
         ApplicationManager.getApplication().executeOnPooledThread {
             ClaudeApiClient.streamMessage(
                 history,
-                model = modelForRequest,
-                onDelta = { delta ->
-                    SwingUtilities.invokeLater { appendStreamDelta(delta) }
-                },
+                model = model,
+                onDelta = { delta -> SwingUtilities.invokeLater { appendStreamDelta(delta) } },
                 onDone = { fullText ->
-                    history += ApiMessage("assistant", fullText)
+                    history += ApiMessage.text("assistant", fullText)
                     SwingUtilities.invokeLater {
                         finishStreaming(fullText)
                         setBusy(false)
@@ -221,7 +249,6 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     SwingUtilities.invokeLater {
                         cancelStreaming()
                         appendHtml("<p style='color:red;'>Error: ${escape(e.message ?: e.toString())}</p>")
-                        // Drop the last user turn so the user can edit and retry.
                         if (history.isNotEmpty() && history.last().role == "user") {
                             history.removeAt(history.size - 1)
                         }
@@ -230,6 +257,108 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                 }
             )
         }
+    }
+
+    // ---- agent mode -------------------------------------------------------------------
+
+    private fun startAgentRun(model: String) {
+        val confirmer = PanelWriteConfirmer()
+        val handler = object : AgentEventHandler {
+            override fun onAssistantText(text: String) {
+                SwingUtilities.invokeLater {
+                    appendHtml("<p><b>Claude:</b><br/>${renderMarkdown(text)}</p>")
+                }
+            }
+            override fun onToolCall(name: String, input: String) {
+                SwingUtilities.invokeLater {
+                    appendHtml(
+                        "<p style='color:#6a7785;'><i>&rarr; ${escape(name)}(${escape(input)})</i></p>"
+                    )
+                }
+            }
+            override fun onToolResult(name: String, result: ToolResult) {
+                SwingUtilities.invokeLater {
+                    val color = if (result.isError) "#c54040" else "#6a7785"
+                    val preview = result.content.lineSequence().take(8).joinToString("\n")
+                    val ellipsis = if (result.content.lines().size > 8) "\n..." else ""
+                    appendHtml(
+                        "<p style='color:$color;'><i>&larr; ${escape(name)}:</i><br/>" +
+                            "<code>${escapeMultiline(preview + ellipsis)}</code></p>"
+                    )
+                }
+            }
+            override fun onDone() {
+                SwingUtilities.invokeLater { setBusy(false) }
+            }
+            override fun onError(e: Throwable) {
+                SwingUtilities.invokeLater {
+                    appendHtml("<p style='color:red;'>Agent error: ${escape(e.message ?: e.toString())}</p>")
+                    setBusy(false)
+                }
+            }
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            AgentLoop(project, history, model, confirmer, handler).run()
+        }
+    }
+
+    /** Bridges [WriteConfirmer] to the modal [ConfirmWriteDialog] on the EDT. */
+    private inner class PanelWriteConfirmer : WriteConfirmer {
+        override fun confirm(request: WriteRequest): WriteConfirmer.Decision {
+            val now = System.currentTimeMillis()
+            val until = autoApproveUntilMillis
+            if (until != null && now < until) return WriteConfirmer.Decision.APPLY
+
+            val ref = AtomicReference<WriteConfirmer.Decision>(WriteConfirmer.Decision.REJECT)
+            ApplicationManager.getApplication().invokeAndWait {
+                val dlg = ConfirmWriteDialog(project, request)
+                val applied = dlg.showAndGet()
+                if (applied) {
+                    ref.set(WriteConfirmer.Decision.APPLY)
+                    dlg.autoApproveUntilMillis?.let { setAutoApprove(it) }
+                }
+            }
+            return ref.get()
+        }
+    }
+
+    // ---- auto-approve banner ----------------------------------------------------------
+
+    private fun setAutoApprove(untilMillis: Long) {
+        autoApproveUntilMillis = untilMillis
+        refreshAutoApproveBanner()
+        if (!autoApproveTicker.isRunning) autoApproveTicker.start()
+    }
+
+    private fun cancelAutoApprove() {
+        autoApproveUntilMillis = null
+        refreshAutoApproveBanner()
+        if (autoApproveTicker.isRunning) autoApproveTicker.stop()
+    }
+
+    private fun refreshAutoApproveBanner() {
+        val until = autoApproveUntilMillis
+        if (until == null) {
+            autoApproveBanner.setVisible(false)
+            revalidate(); repaint()
+            return
+        }
+        if (until == Long.MAX_VALUE) {
+            autoApproveBanner.setText("Auto-approving writes until you close this chat")
+        } else {
+            val remaining = (until - System.currentTimeMillis()).coerceAtLeast(0)
+            if (remaining <= 0) {
+                cancelAutoApprove()
+                appendHtml("<p style='color:gray;'>Auto-approval expired. Future writes will require confirmation.</p>")
+                return
+            }
+            val mins = remaining / 60_000
+            val secs = (remaining / 1_000) % 60
+            val pretty = if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
+            autoApproveBanner.setText("Auto-approving writes for the next $pretty")
+        }
+        autoApproveBanner.setVisible(true)
+        revalidate(); repaint()
     }
 
     // ---- streaming state machine -------------------------------------------------------
@@ -246,7 +375,6 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun finishStreaming(fullText: String) {
         streamingText = null
-        // Re-render with full markdown styling now that we have the whole message.
         transcriptHtml.append("<p><b>Claude:</b><br/>${renderMarkdown(fullText)}</p>")
         renderTranscript()
     }
@@ -262,6 +390,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         attachFileButton.isEnabled = !busy
         attachSelectionButton.isEnabled = !busy
         modelCombo.isEnabled = !busy
+        agentModeCheckBox.isEnabled = !busy
     }
 
     private fun appendHtml(html: String) {
@@ -272,9 +401,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun renderTranscript() {
         val live = streamingText
         val streamingBubble = if (live != null) {
-            // While streaming, skip markdown rendering — render escaped plain
-            // text so partially-open code fences don't blow up the regex.
-            "<p><b>Claude:</b><br/>${escapeMultiline(live.toString())}<span style='color:gray;'>▌</span></p>"
+            "<p><b>Claude:</b><br/>${escapeMultiline(live.toString())}<span style='color:gray;'>&#9612;</span></p>"
         } else {
             ""
         }
@@ -289,19 +416,13 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun escapeMultiline(s: String): String =
         escape(s).replace("\n", "<br/>")
 
-    /**
-     * Tiny markdown-ish renderer: fenced code blocks and inline code only.
-     * Everything else is escaped and rendered with line breaks preserved.
-     */
     private fun renderMarkdown(s: String): String {
         val codeBlock = Regex("```([a-zA-Z0-9_+\\-]*)\\n([\\s\\S]*?)```")
         val out = StringBuilder()
         var cursor = 0
         for (m in codeBlock.findAll(s)) {
             out.append(inlineRender(s.substring(cursor, m.range.first)))
-            out.append(
-                "<pre style='background:#2b2b2b;color:#e6e6e6;padding:8px;border-radius:4px;'>"
-            )
+            out.append("<pre style='background:#2b2b2b;color:#e6e6e6;padding:8px;border-radius:4px;'>")
             out.append(escape(m.groupValues[2]))
             out.append("</pre>")
             cursor = m.range.last + 1
@@ -310,11 +431,25 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         return out.toString()
     }
 
-    private fun inlineRender(s: String): String {
-        val escaped = escapeMultiline(s)
-        return escaped.replace(
+    private fun inlineRender(s: String): String =
+        escapeMultiline(s).replace(
             Regex("`([^`<>\\n]+)`"),
             "<code style='background:#3c3f41;color:#e6e6e6;padding:1px 4px;border-radius:3px;'>$1</code>"
         )
-    }
 }
+
+/** Thin wrapper around the JPanel + JLabel + Cancel button used for the banner. */
+private class AutoApproveBanner(onCancel: () -> Unit) {
+    private val label = JBLabel("")
+    private val cancel = JButton("Cancel").apply { addActionListener { onCancel() } }
+    val component: JPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 4)).apply {
+        background = java.awt.Color(0xFFF4C0)
+        isOpaque = true
+        add(label)
+        add(cancel)
+    }
+
+    fun setVisible(visible: Boolean) { component.isVisible = visible }
+    fun setText(text: String) { label.text = text }
+}
+                    

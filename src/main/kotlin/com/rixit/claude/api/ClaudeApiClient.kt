@@ -1,6 +1,7 @@
 package com.rixit.claude.api
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.rixit.claude.settings.ClaudeSettings
 import java.net.URI
@@ -9,16 +10,15 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
-/** A single turn in the conversation, in the shape the Anthropic API expects. */
-data class ApiMessage(val role: String, val content: String)
-
 class ClaudeApiException(message: String) : RuntimeException(message)
 
 /**
  * Thin client for the Anthropic Messages API.
  *
- *  - [sendMessage]: non-streaming, returns the full reply as a String.
- *  - [streamMessage]: streams via SSE, invoking [onDelta] for each text chunk.
+ *  - [sendMessage]: non-streaming. Returns the full [AssistantTurn], including
+ *    any tool_use blocks the model emitted. Use this when you need tool use
+ *    or need the structured response.
+ *  - [streamMessage]: streaming via SSE for plain text replies. No tool use.
  *
  * Both methods block the calling thread — call them off the EDT.
  */
@@ -30,8 +30,14 @@ object ClaudeApiClient {
 
     private val gson = Gson()
 
-    fun sendMessage(history: List<ApiMessage>, model: String? = null): String {
-        val req = buildRequest(history, stream = false, modelOverride = model)
+    // -- Non-streaming, with optional tools ------------------------------------
+
+    fun sendMessage(
+        history: List<ApiMessage>,
+        model: String? = null,
+        tools: List<ToolSchema> = emptyList()
+    ): AssistantTurn {
+        val req = buildRequest(history, stream = false, modelOverride = model, tools = tools)
         val resp = try {
             http.send(req, HttpResponse.BodyHandlers.ofString())
         } catch (e: Exception) {
@@ -40,17 +46,11 @@ object ClaudeApiClient {
         if (resp.statusCode() !in 200..299) {
             throw ClaudeApiException("Claude API error ${resp.statusCode()}: ${resp.body()}")
         }
-        return extractText(resp.body())
+        return parseResponse(resp.body())
     }
 
-    /**
-     * Streams a reply. Callbacks run on the IO thread driving the HTTP read —
-     * marshal to the EDT yourself when you update Swing.
-     *
-     *  - [onDelta] is invoked for every `content_block_delta` (text) event.
-     *  - [onDone] is invoked once with the full concatenated reply.
-     *  - [onError] is invoked instead of [onDone] on any failure.
-     */
+    // -- Streaming (text-only) -------------------------------------------------
+
     fun streamMessage(
         history: List<ApiMessage>,
         model: String? = null,
@@ -59,7 +59,7 @@ object ClaudeApiClient {
         onError: (Throwable) -> Unit
     ) {
         val req = try {
-            buildRequest(history, stream = true, modelOverride = model)
+            buildRequest(history, stream = true, modelOverride = model, tools = emptyList())
         } catch (e: Exception) {
             onError(e); return
         }
@@ -91,8 +91,6 @@ object ClaudeApiClient {
                             if (currentEvent == "content_block_delta") {
                                 handleDelta(data, full, onDelta)
                             }
-                            // message_start / content_block_start / message_delta /
-                            // message_stop carry no text we care about; ignored.
                         }
                         line.isEmpty()             -> currentEvent = null
                     }
@@ -114,35 +112,48 @@ object ClaudeApiClient {
                 full.append(text)
                 onDelta(text)
             }
-            // Other delta types (e.g. input_json_delta for tool use) — ignored.
         } catch (_: Exception) {
-            // Tolerate malformed events rather than dying mid-stream.
+            // Tolerate malformed SSE events rather than dying mid-stream.
         }
     }
+
+    // -- Request building ------------------------------------------------------
 
     private fun buildRequest(
         history: List<ApiMessage>,
         stream: Boolean,
-        modelOverride: String? = null
+        modelOverride: String?,
+        tools: List<ToolSchema>
     ): HttpRequest {
         val settings = ClaudeSettings.getInstance()
         val apiKey = settings.apiKey
         if (apiKey.isBlank()) {
             throw ClaudeApiException(
-                "No Anthropic API key configured. Open Settings → Tools → Claude Chat."
+                "No Anthropic API key configured. Open Settings → Tools → Claude AI Assistant."
             )
         }
         val effectiveModel = modelOverride?.takeIf { it.isNotBlank() } ?: settings.state.model
-        val body = mapOf(
+
+        val body = mutableMapOf<String, Any>(
             "model" to effectiveModel,
             "max_tokens" to settings.state.maxTokens,
             "system" to settings.state.systemPrompt,
             "stream" to stream,
-            "messages" to history.map { mapOf("role" to it.role, "content" to it.content) }
+            "messages" to history.map { serializeMessage(it) }
         )
+        if (tools.isNotEmpty()) {
+            body["tools"] = tools.map {
+                mapOf(
+                    "name" to it.name,
+                    "description" to it.description,
+                    "input_schema" to it.inputSchema
+                )
+            }
+        }
+
         val builder = HttpRequest.newBuilder()
             .uri(URI.create(settings.state.baseUrl.trimEnd('/') + "/v1/messages"))
-            .timeout(Duration.ofSeconds(if (stream) 300 else 120))
+            .timeout(Duration.ofSeconds(if (stream) 300 else 180))
             .header("Content-Type", "application/json")
             .header("x-api-key", apiKey)
             .header("anthropic-version", "2023-06-01")
@@ -151,14 +162,52 @@ object ClaudeApiClient {
         return builder.build()
     }
 
-    private fun extractText(json: String): String {
-        val root = JsonParser.parseString(json).asJsonObject
-        val content = root.getAsJsonArray("content") ?: return ""
-        val sb = StringBuilder()
-        for (i in 0 until content.size()) {
-            val obj = content[i].asJsonObject
-            if (obj.has("text")) sb.append(obj["text"].asString)
+    private fun serializeMessage(m: ApiMessage): Map<String, Any> {
+        // If the entire message is a single Text block, send it as a simple
+        // string — that's the most common case and the most readable wire form.
+        if (m.content.size == 1 && m.content[0] is ApiContent.Text) {
+            return mapOf("role" to m.role, "content" to (m.content[0] as ApiContent.Text).text)
         }
-        return sb.toString()
+        return mapOf("role" to m.role, "content" to m.content.map { serializeBlock(it) })
     }
-}
+
+    private fun serializeBlock(b: ApiContent): Map<String, Any> = when (b) {
+        is ApiContent.Text -> mapOf("type" to "text", "text" to b.text)
+        is ApiContent.ToolUse -> mapOf(
+            "type" to "tool_use",
+            "id" to b.id,
+            "name" to b.name,
+            // Gson serializes JsonObject as-is when we hand it back.
+            "input" to b.input
+        )
+        is ApiContent.ToolResult -> mapOf(
+            "type" to "tool_result",
+            "tool_use_id" to b.toolUseId,
+            "content" to b.content,
+            "is_error" to b.isError
+        )
+    }
+
+    // -- Response parsing ------------------------------------------------------
+
+    private fun parseResponse(json: String): AssistantTurn {
+        val root = JsonParser.parseString(json).asJsonObject
+        val stopReason = root.get("stop_reason")?.takeIf { !it.isJsonNull }?.asString
+        val blocks = mutableListOf<ApiContent>()
+        val arr = root.getAsJsonArray("content") ?: return AssistantTurn(emptyList(), stopReason)
+        for (i in 0 until arr.size()) {
+            val obj = arr[i].asJsonObject
+            when (obj.get("type")?.asString) {
+                "text" -> {
+                    obj.get("text")?.asString?.let { blocks.add(ApiContent.Text(it)) }
+                }
+                "tool_use" -> {
+                    val id = obj.get("id")?.asString ?: continue
+                    val name = obj.get("name")?.asString ?: continue
+                    val input = obj.getAsJsonObject("input") ?: JsonObject()
+                    blocks.add(ApiContent.ToolUse(id, name, input))
+                }
+                // Ignore unknown block types (e.g. server-side tool variants).
+            }
+        }
+        return AssistantTurn(blocks, stopReason)

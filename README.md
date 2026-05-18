@@ -1,4 +1,4 @@
-# Claude Chat for Rider
+# Claude AI Assistant for Rider
 
 A small JetBrains plugin that drops a Claude chat tool window into Rider (or any
 IntelliJ-platform IDE) and lets you push the current file or selection in as
@@ -11,7 +11,7 @@ context.
 - **Send Selection to Claude** — `Ctrl+Alt+Shift+S` (also in the editor right-click menu).
 - **Auto-attached header** on every message: file path, language, and cursor `Lline:col`,
   so Claude always knows where you are.
-- **Settings page** at *Settings → Tools → Claude Chat* for the API key, model,
+- **Settings page** at *Settings → Tools → Claude AI Assistant* for the API key, model,
   base URL, max tokens, and system prompt.
 - API key stored in IDE PasswordSafe (OS keychain when available), never in plain XML.
 
@@ -23,7 +23,9 @@ context.
 
 ## Build and install
 
-On Windows, double-click `build.bat` (or run it from a terminal). The first
+### One-shot build
+
+Run `build.bat` (double-click in Explorer or from a terminal). The first
 run will:
 
 1. Check that Java 21+ is on the PATH.
@@ -35,6 +37,14 @@ run will:
 
 Then in Rider: *Settings → Plugins → ⚙ → Install Plugin from Disk…* and pick
 `plugin.zip`. Restart when prompted.
+
+### Auto-build mode (recommended while iterating)
+
+Run `auto-build.bat` once in a terminal and leave it open. It does the
+first build and then watches the source tree — every save triggers a
+rebuild and refreshes `plugin.zip` automatically. You just reinstall the
+zip in Rider when you want to pick up the changes. Press Ctrl+C in the
+watcher terminal to stop.
 
 If you don't have JDK 21:
 ```
@@ -52,7 +62,7 @@ gradle wrapper --gradle-version 8.10   # one-time
 
 ## First-time setup
 
-1. Open *Settings → Tools → Claude Chat*.
+1. Open *Settings → Tools → Claude AI Assistant*.
 2. Paste your Anthropic API key.
 3. Pick or type a model (defaults to `claude-sonnet-4-6`).
 4. Click OK.
@@ -75,9 +85,38 @@ claude-chat-rider/
     └── resources/META-INF/plugin.xml
 ```
 
+## Agent mode
+
+Each chat tab has an **Agent mode** checkbox. With it on, Claude can call tools:
+
+- `read_file(path)` — read a file's content (with line numbers, capped at 100 KB).
+- `list_files(directory, recursive?)` — explore the project tree.
+- `edit_file(path, old_string, new_string, replace_all?)` — find-and-replace edit.
+- `write_file(path, content)` — create a new file or overwrite an existing one.
+
+**Every write is gated.** Before any `edit_file` or `write_file` actually
+touches disk, the plugin pops a modal dialog with an embedded side-by-side
+diff (current vs. proposed) and an *Apply / Reject* choice. Reads run inline,
+no prompt.
+
+**Auto-approve windows.** In the same dialog there's a dropdown:
+*Just this change*, *5 minutes*, *30 minutes*, *1 hour*, *until I close this
+chat*. Pick a window and subsequent writes from the agent loop apply without
+re-prompting. A yellow banner at the top of the chat shows the remaining
+time and a *Cancel* button to revoke immediately. Clearing the chat or
+closing the tab also clears the timer.
+
+**Path safety.** All paths resolve against `project.basePath`. Absolute paths
+outside the project are rejected. There's no `delete_file`, no `run_command`
+— this is an editor, not a shell.
+
+**Mode caveats.** Agent mode is non-streaming (responses arrive in chunks
+between tool calls). Chat mode (the default, with agent mode off) still
+streams as before. Toggle per chat tab — one tab can be a long agent
+session while another stays as plain conversation.
+
 ## What it doesn't do (yet)
 
-- **No tool use / no function calling.** Plain text chat.
 - **No conversation history across IDE restarts.** Clear by design — clears
   every time the panel is recreated.
 - **No request cancellation.** Once a stream starts there's no Stop button;

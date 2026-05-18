@@ -1,6 +1,6 @@
 <idea-plugin>
     <id>com.rixit.claude.chat</id>
-    <name>Claude Chat</name>
+    <name>Claude AI Assistant</name>
     <vendor email="info@rixitsolutions.be" url="https://rixitsolutions.be">Rix IT Solutions</vendor>
 
     <description><![CDATA[
@@ -9,11 +9,30 @@
             <li>Tool window with conversation history</li>
             <li>Send the current file or selection as context</li>
             <li>Cursor position and file path are auto-attached</li>
-            <li>Model and API key configured in Settings &rarr; Tools &rarr; Claude Chat</li>
+            <li>Model and API key configured in Settings &rarr; Tools &rarr; Claude AI Assistant</li>
         </ul>
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.3.2</h3>
+        <ul><li>Added CLAUDE.md (project working agreement: commit / version / safety rules).</li></ul>
+        <h3>0.3.1</h3>
+        <ul>
+            <li>Build script auto-refreshes plugin.zip on every gradle buildPlugin.</li>
+            <li>New auto-build.bat / auto-build.ps1: run once, the plugin rebuilds on every file edit.</li>
+        </ul>
+        <h3>0.3.0</h3>
+        <ul>
+            <li>Renamed to "Claude AI Assistant".</li>
+        </ul>
+        <h3>0.2.0</h3>
+        <ul>
+            <li>Agent mode: Claude can read, edit, and create files in the project (per-write confirmation with diff preview).</li>
+            <li>Auto-approve writes for 5min / 30min / 1hr / until the chat is closed.</li>
+            <li>Multiple independent chat tabs via the "+" button.</li>
+            <li>Per-chat model selector with sticky "last used" memory.</li>
+            <li>Reply streaming.</li>
+        </ul>
         <h3>0.1.0</h3>
         <ul><li>Initial release: chat tool window, file/selection attach, configurable model.</li></ul>
     ]]></change-notes>
@@ -30,7 +49,7 @@
         <applicationConfigurable parentId="tools"
                                  instance="com.rixit.claude.settings.ClaudeSettingsConfigurable"
                                  id="com.rixit.claude.settings"
-                                 displayName="Claude Chat"/>
+                                 displayName="Claude AI Assistant"/>
 
         <applicationService serviceImplementation="com.rixit.claude.settings.ClaudeSettings"/>
     </extensions>
@@ -38,7 +57,7 @@
     <actions>
         <action id="Claude.OpenChat"
                 class="com.rixit.claude.actions.OpenChatAction"
-                text="Open Claude Chat"
+                text="Open Claude AI Assistant"
                 description="Focus the Claude chat tool window">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt K"/>
@@ -54,12 +73,4 @@
         </action>
 
         <action id="Claude.SendSelection"
-                class="com.rixit.claude.actions.SendSelectionAction"
-                text="Send Selection to Claude"
-                description="Attach the current selection to your next Claude message">
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-            <add-to-group group-id="ToolsMenu" anchor="after" relative-to-action="Claude.SendCurrentFile"/>
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift S"/>
-        </action>
-    </actions>
-</idea-plugin>
+     

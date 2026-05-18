@@ -10,7 +10,7 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 
 /**
- * Application-level persistent settings for the Claude Chat plugin.
+ * Application-level persistent settings for the Claude AI Assistant plugin.
  *
  * Non-secret fields (model, base URL, etc.) are stored in IDE config XML.
  * The Anthropic API key is held in PasswordSafe (OS keychain when possible).
@@ -64,5 +64,3 @@ class ClaudeSettings : PersistentStateComponent<ClaudeSettings.State> {
             "claude-opus-4-6",
             "claude-haiku-4-5-20251001"
         )
-    }
-}
