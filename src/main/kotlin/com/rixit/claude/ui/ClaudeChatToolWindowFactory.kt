@@ -33,7 +33,11 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
         toolWindow.title = "Claude AI Assistant"
 
         // Seed with one empty chat so the window isn't blank on first open.
-        addNewChatTab(project, toolWindow)
+        // Guard: if a previous initialization or a startup activity already
+        // populated content, don't append a duplicate seed tab.
+        if (toolWindow.contentManager.contents.isEmpty()) {
+            addNewChatTab(project, toolWindow)
+        }
 
         // "+" button in the tool window header to spawn additional chats.
         toolWindow.setTitleActions(listOf(NewChatTitleAction(project)))
@@ -80,8 +84,4 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
             if (!SwingUtilities.isDescendingFrom(src, toolWindow.component)) return@AWTEventListener
 
             var c: Component? = src
-            while (c != null) {
-                if (c.javaClass.simpleName == "ContentTabLabel") {
-                    val content = try {
-                        c.javaClass.getMethod("getContent").invoke(c) as? Content
-    
+         

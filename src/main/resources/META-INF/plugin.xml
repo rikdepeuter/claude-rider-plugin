@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.1</h3>
+        <ul><li>Startup activity re-seeds the tool window with "Chat 1" if it's ever shown empty (e.g. after a plugin update from an older version left it in the 0-contents state). Factory also no longer double-seeds when it does run.</li></ul>
         <h3>0.7.0</h3>
         <ul>
             <li>Paste images (Ctrl+V) or drag-and-drop them into the chat input to send screenshots to Claude.</li>
@@ -54,9 +56,4 @@
             <li>Per-chat model selector with sticky "last used" memory.</li>
             <li>Reply streaming.</li>
         </ul>
-        <h3>0.1.0</h3>
-        <ul><li>Initial release: chat tool window, file/selection attach, configurable model.</li></ul>
-    ]]></change-notes>
-
-    <!-- Works in any JetBrains IDE built on the platform (Rider included). -->
-    <depends>com.intellij.modules.platf
+  
