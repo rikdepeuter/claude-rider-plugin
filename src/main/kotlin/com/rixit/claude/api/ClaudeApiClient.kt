@@ -173,6 +173,14 @@ object ClaudeApiClient {
 
     private fun serializeBlock(b: ApiContent): Map<String, Any> = when (b) {
         is ApiContent.Text -> mapOf("type" to "text", "text" to b.text)
+        is ApiContent.Image -> mapOf(
+            "type" to "image",
+            "source" to mapOf(
+                "type" to "base64",
+                "media_type" to b.mediaType,
+                "data" to b.base64Data
+            )
+        )
         is ApiContent.ToolUse -> mapOf(
             "type" to "tool_use",
             "id" to b.id,
@@ -204,10 +212,4 @@ object ClaudeApiClient {
                 "tool_use" -> {
                     val id = obj.get("id")?.asString ?: continue
                     val name = obj.get("name")?.asString ?: continue
-                    val input = obj.getAsJsonObject("input") ?: JsonObject()
-                    blocks.add(ApiContent.ToolUse(id, name, input))
-                }
-                // Ignore unknown block types (e.g. server-side tool variants).
-            }
-        }
-        return AssistantTurn(blocks, stopReason)
+                    val input = obj.getAsJsonObject("input") ?: JsonObje

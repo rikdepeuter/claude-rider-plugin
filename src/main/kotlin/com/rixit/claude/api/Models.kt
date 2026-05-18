@@ -10,6 +10,15 @@ import com.google.gson.JsonObject
 sealed class ApiContent {
     data class Text(val text: String) : ApiContent()
 
+    /**
+     * An image attached to a user message. [base64Data] is the raw bytes of
+     * the image (PNG, JPEG, GIF, WEBP) encoded with [java.util.Base64.getEncoder].
+     */
+    data class Image(
+        val mediaType: String,
+        val base64Data: String
+    ) : ApiContent()
+
     data class ToolUse(
         val id: String,
         val name: String,
@@ -46,12 +55,4 @@ data class AssistantTurn(
         get() = content.filterIsInstance<ApiContent.ToolUse>()
 
     val text: String
-        get() = content.filterIsInstance<ApiContent.Text>().joinToString("\n") { it.text }
-}
-
-/** A tool the model can call. The [inputSchema] is a JSON Schema object. */
-data class ToolSchema(
-    val name: String,
-    val description: String,
-    val inputSchema: Map<String, Any?>
-)
+   

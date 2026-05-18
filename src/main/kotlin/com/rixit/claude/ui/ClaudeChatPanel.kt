@@ -15,6 +15,7 @@ import com.rixit.claude.agent.ConfirmWriteDialog
 import com.rixit.claude.agent.ToolResult
 import com.rixit.claude.agent.WriteConfirmer
 import com.rixit.claude.agent.WriteRequest
+import com.rixit.claude.api.ApiContent
 import com.rixit.claude.api.ApiMessage
 import com.rixit.claude.api.ClaudeApiClient
 import com.rixit.claude.context.EditorContextProvider
@@ -27,14 +28,22 @@ import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.GraphicsEnvironment
+import java.awt.Image
 import java.awt.RenderingHints
+import java.awt.datatransfer.DataFlavor
 import java.awt.event.ActionEvent
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import java.util.Base64
 import java.util.concurrent.atomic.AtomicReference
+import javax.imageio.ImageIO
 import javax.swing.AbstractAction
 import javax.swing.ButtonGroup
+import javax.swing.ImageIcon
 import javax.swing.JButton
 import javax.swing.JCheckBoxMenuItem
 import javax.swing.JComponent
+import javax.swing.JLabel
 import javax.swing.JMenu
 import javax.swing.JMenuItem
 import javax.swing.JPanel
@@ -45,6 +54,7 @@ import javax.swing.JToggleButton
 import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
 import javax.swing.Timer
+import javax.swing.TransferHandler
 
 /**
  * The main chat surface inside a Claude tool window tab.
@@ -117,6 +127,21 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val history = mutableListOf<ApiMessage>()
     private val pendingAttachments = mutableListOf<String>()
 
+    /**
+     * Images the user has pasted/dropped but not yet sent. Each entry carries
+     * raw bytes (for the API) and a thumbnail icon (for the strip).
+     */
+    private data class PendingImage(
+        val mediaType: String,
+        val bytes: ByteArray,
+        val thumbnail: ImageIcon
+    )
+
+    private val pendingImages = mutableListOf<PendingImage>()
+    private val thumbnailsStrip = JPanel(FlowLayout(FlowLayout.LEFT, 4, 4)).apply {
+        isVisible = false
+    }
+
     /** Non-null while a chat-mode reply is streaming in. */
     private var streamingText: StringBuilder? = null
 
@@ -141,10 +166,13 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             override fun actionPerformed(e: ActionEvent) = onSend()
         })
 
+        installImagePasteHandler()
+
         appendHtml(
             "<p style='color:gray;'>Hi! Set your Anthropic API key under " +
                 "<i>Settings &rarr; Tools &rarr; Claude AI Assistant</i>. " +
                 "Press <b>Ctrl+Enter</b> to send. " +
+                "<b>Paste images</b> (Ctrl+V) or drop them into the input box to send screenshots. " +
                 "Open the menu (top-right) for model selection, agent mode, and Clear.</p>"
         )
     }
@@ -166,10 +194,123 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             add(inputArea, BorderLayout.CENTER)
             add(sendButton, BorderLayout.EAST)
         }
-        return JPanel(BorderLayout()).apply {
-            add(toolbar, BorderLayout.NORTH)
+        // Pending thumbnails sit between the toolbar and the input row,
+        // collapsed (invisible) when there are no pasted images.
+        val inputStack = JPanel(BorderLayout()).apply {
+            add(thumbnailsStrip, BorderLayout.NORTH)
             add(row, BorderLayout.CENTER)
         }
+        return JPanel(BorderLayout()).apply {
+            add(toolbar, BorderLayout.NORTH)
+            add(inputStack, BorderLayout.CENTER)
+        }
+    }
+
+    // ---- image paste / thumbnails -----------------------------------------------------
+
+    /**
+     * Lets the user paste (Ctrl+V) or drag-drop images into the input area.
+     * Pasted images are added to [pendingImages] and shown as thumbnails;
+     * non-image clipboard content (text) falls through to the default
+     * TransferHandler so plain-text paste still works.
+     */
+    private fun installImagePasteHandler() {
+        val original = input.transferHandler
+        input.transferHandler = object : TransferHandler() {
+            override fun canImport(support: TransferSupport): Boolean {
+                if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) return true
+                return original?.canImport(support) ?: false
+            }
+            override fun importData(support: TransferSupport): Boolean {
+                if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) {
+                    return try {
+                        val img = support.transferable.getTransferData(DataFlavor.imageFlavor) as Image
+                        addPendingImage(img)
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                return original?.importData(support) ?: false
+            }
+            override fun getSourceActions(c: JComponent): Int =
+                original?.getSourceActions(c) ?: COPY_OR_MOVE
+        }
+    }
+
+    private fun addPendingImage(image: Image) {
+        val w = image.getWidth(null)
+        val h = image.getHeight(null)
+        if (w <= 0 || h <= 0) return
+
+        val buffered = if (image is BufferedImage) image else {
+            val bi = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+            val g = bi.createGraphics()
+            g.drawImage(image, 0, 0, null)
+            g.dispose()
+            bi
+        }
+
+        val baos = ByteArrayOutputStream()
+        ImageIO.write(buffered, "png", baos)
+        val bytes = baos.toByteArray()
+
+        val thumb = makeThumbnail(buffered, 64)
+        pendingImages.add(PendingImage("image/png", bytes, ImageIcon(thumb)))
+        refreshThumbnails()
+    }
+
+    private fun makeThumbnail(src: BufferedImage, targetHeight: Int): BufferedImage {
+        val ratio = targetHeight.toDouble() / src.height.coerceAtLeast(1)
+        val targetWidth = (src.width * ratio).toInt().coerceAtLeast(1)
+        val out = BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB)
+        val g = out.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+        g.drawImage(src, 0, 0, targetWidth, targetHeight, null)
+        g.dispose()
+        return out
+    }
+
+    private fun refreshThumbnails() {
+        thumbnailsStrip.removeAll()
+        for (pi in pendingImages.toList()) {
+            thumbnailsStrip.add(makeThumbnailWidget(pi))
+        }
+        thumbnailsStrip.isVisible = pendingImages.isNotEmpty()
+        thumbnailsStrip.revalidate()
+        thumbnailsStrip.repaint()
+    }
+
+    private fun makeThumbnailWidget(pi: PendingImage): JComponent {
+        val pic = JLabel(pi.thumbnail)
+        val remove = JButton("X").apply {
+            toolTipText = "Remove this image"
+            font = uiFont.deriveFont(10f)
+            margin = java.awt.Insets(0, 4, 0, 4)
+            isFocusable = false
+            addActionListener {
+                pendingImages.remove(pi)
+                refreshThumbnails()
+            }
+        }
+        return JPanel(BorderLayout(2, 0)).apply {
+            add(pic, BorderLayout.CENTER)
+            add(remove, BorderLayout.EAST)
+        }
+    }
+
+    /** Base64 PNG data: URI for the thumbnail, suitable for inline HTML. */
+    private fun thumbnailDataUri(icon: ImageIcon): String {
+        val w = icon.iconWidth.coerceAtLeast(1)
+        val h = icon.iconHeight.coerceAtLeast(1)
+        val bi = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        val g = bi.createGraphics()
+        g.drawImage(icon.image, 0, 0, null)
+        g.dispose()
+        val baos = ByteArrayOutputStream()
+        ImageIO.write(bi, "png", baos)
+        return "data:image/png;base64," + Base64.getEncoder().encodeToString(baos.toByteArray())
     }
 
     // ---- options menu ----------------------------------------------------------------
@@ -284,6 +425,8 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun onClear() {
         history.clear()
         pendingAttachments.clear()
+        pendingImages.clear()
+        refreshThumbnails()
         streamingText = null
         cancelAutoApprove()
         transcriptHtml.clear()
@@ -297,154 +440,11 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         if (attachFileToggle.isSelected) attachCurrentFile()
         if (attachSelectionToggle.isSelected) attachSelection()
 
-        if (text.isEmpty() && pendingAttachments.isEmpty()) return
+        if (text.isEmpty() && pendingAttachments.isEmpty() && pendingImages.isEmpty()) return
 
         val ctx = EditorContextProvider.current(project)
         val header = EditorContextProvider.headerLine(ctx)
 
-        val parts = mutableListOf<String>()
-        if (header != null) parts += header
-        parts += pendingAttachments
-        if (text.isNotEmpty()) parts += text
-        val composed = parts.joinToString("\n\n")
-
-        val displayed = buildString {
-            if (header != null) {
-                append("<i style='color:gray;'>").append(escape(header)).append("</i><br/>")
-            }
-            if (pendingAttachments.isNotEmpty()) {
-                append("<span style='color:gray;'>(${pendingAttachments.size} attachment(s))</span><br/>")
-            }
-            append(escapeMultiline(text))
-        }
-        appendHtml("<p><b>You:</b><br/>$displayed</p>")
-
-        history += ApiMessage.text("user", composed)
-        pendingAttachments.clear()
-        input.text = ""
-        setBusy(true)
-
-        val modelForRequest = sessionModel
-        if (agentModeEnabled) {
-            startAgentRun(modelForRequest)
-        } else {
-            startStreamRun(modelForRequest)
-        }
-    }
-
-    // ---- chat (streaming) mode ---------------------------------------------------------
-
-    private fun startStreamRun(model: String) {
-        startStreaming()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            ClaudeApiClient.streamMessage(
-                history,
-                model = model,
-                onDelta = { delta -> SwingUtilities.invokeLater { appendStreamDelta(delta) } },
-                onDone = { fullText ->
-                    history += ApiMessage.text("assistant", fullText)
-                    SwingUtilities.invokeLater {
-                        finishStreaming(fullText)
-                        setBusy(false)
-                    }
-                },
-                onError = { e ->
-                    SwingUtilities.invokeLater {
-                        cancelStreaming()
-                        appendHtml("<p style='color:red;'>Error: ${escape(e.message ?: e.toString())}</p>")
-                        if (history.isNotEmpty() && history.last().role == "user") {
-                            history.removeAt(history.size - 1)
-                        }
-                        setBusy(false)
-                    }
-                }
-            )
-        }
-    }
-
-    // ---- agent mode -------------------------------------------------------------------
-
-    private fun startAgentRun(model: String) {
-        val confirmer = PanelWriteConfirmer()
-        val handler = object : AgentEventHandler {
-            override fun onAssistantText(text: String) {
-                SwingUtilities.invokeLater {
-                    appendHtml("<p><b>Claude:</b><br/>${renderMarkdown(text)}</p>")
-                }
-            }
-            override fun onToolCall(name: String, input: String) {
-                SwingUtilities.invokeLater {
-                    appendHtml(
-                        "<p style='color:#6a7785;'><i>&rarr; ${escape(name)}(${escape(input)})</i></p>"
-                    )
-                }
-            }
-            override fun onToolResult(name: String, result: ToolResult) {
-                SwingUtilities.invokeLater {
-                    val color = if (result.isError) "#c54040" else "#6a7785"
-                    val preview = result.content.lineSequence().take(8).joinToString("\n")
-                    val ellipsis = if (result.content.lines().size > 8) "\n..." else ""
-                    appendHtml(
-                        "<p style='color:$color;'><i>&larr; ${escape(name)}:</i><br/>" +
-                            "<code>${escapeMultiline(preview + ellipsis)}</code></p>"
-                    )
-                }
-            }
-            override fun onDone() {
-                SwingUtilities.invokeLater { setBusy(false) }
-            }
-            override fun onError(e: Throwable) {
-                SwingUtilities.invokeLater {
-                    appendHtml("<p style='color:red;'>Agent error: ${escape(e.message ?: e.toString())}</p>")
-                    setBusy(false)
-                }
-            }
-        }
-        ApplicationManager.getApplication().executeOnPooledThread {
-            AgentLoop(project, history, model, confirmer, handler).run()
-        }
-    }
-
-    /** Bridges [WriteConfirmer] to the modal [ConfirmWriteDialog] on the EDT. */
-    private inner class PanelWriteConfirmer : WriteConfirmer {
-        override fun confirm(request: WriteRequest): WriteConfirmer.Decision {
-            val now = System.currentTimeMillis()
-            val until = autoApproveUntilMillis
-            if (until != null && now < until) return WriteConfirmer.Decision.APPLY
-
-            val ref = AtomicReference<WriteConfirmer.Decision>(WriteConfirmer.Decision.REJECT)
-            ApplicationManager.getApplication().invokeAndWait {
-                val dlg = ConfirmWriteDialog(project, request)
-                val applied = dlg.showAndGet()
-                if (applied) {
-                    ref.set(WriteConfirmer.Decision.APPLY)
-                    dlg.autoApproveUntilMillis?.let { setAutoApprove(it) }
-                }
-            }
-            return ref.get()
-        }
-    }
-
-    // ---- auto-approve banner ----------------------------------------------------------
-
-    private fun setAutoApprove(untilMillis: Long) {
-        autoApproveUntilMillis = untilMillis
-        refreshAutoApproveBanner()
-        if (!autoApproveTicker.isRunning) autoApproveTicker.start()
-    }
-
-    private fun cancelAutoApprove() {
-        autoApproveUntilMillis = null
-        refreshAutoApproveBanner()
-        if (autoApproveTicker.isRunning) autoApproveTicker.stop()
-    }
-
-    private fun refreshAutoApproveBanner() {
-        val until = autoApproveUntilMillis
-        if (until == null) {
-            autoApproveBanner.setVisible(false)
-            revalidate(); repaint()
-            return
-        }
-        if (until == Long.MAX_VALUE) {
-            autoApproveBanner.setText("Auto
+        // Build the structured content blocks for this user turn: any text
+        // (header + file attachments + the typed message) becomes one Text
+        // block, followed by an Image block per pa
