@@ -4,6 +4,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
@@ -227,7 +228,22 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         clearItem.addActionListener { onClear() }
         menu.add(clearItem)
 
+        // Always-available chat close, since JetBrains hides the tab strip
+        // (and its X / middle-click affordances) when only one Content is
+        // open in a tool window.
+        val closeItem = JMenuItem("Close this chat").apply { font = uiFont }
+        closeItem.addActionListener { closeThisChat() }
+        menu.add(closeItem)
+
         menu.show(menuButton, menuButton.width - menu.preferredSize.width, menuButton.height)
+    }
+
+    private fun closeThisChat() {
+        val tw = ToolWindowManager.getInstance(project)
+            .getToolWindow(ClaudeChatToolWindowFactory.TOOL_WINDOW_ID) ?: return
+        val cm = tw.contentManager
+        val mine = cm.contents.firstOrNull { it.component === this } ?: return
+        cm.removeContent(mine, true)
     }
 
     // ---- public hooks called by external actions --------------------------------------
@@ -431,21 +447,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             return
         }
         if (until == Long.MAX_VALUE) {
-            autoApproveBanner.setText("Auto-approving writes until you close this chat")
-        } else {
-            val remaining = (until - System.currentTimeMillis()).coerceAtLeast(0)
-            if (remaining <= 0) {
-                cancelAutoApprove()
-                appendHtml("<p style='color:gray;'>Auto-approval expired. Future writes will require confirmation.</p>")
-                return
-            }
-            val mins = remaining / 60_000
-            val secs = (remaining / 1_000) % 60
-            val pretty = if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
-            autoApproveBanner.setText("Auto-approving writes for the next $pretty")
-        }
-        autoApproveBanner.setVisible(true)
-        revalidate(); repaint()
-    }
-
-    // ----
+            autoApproveBanner.setText("Auto
