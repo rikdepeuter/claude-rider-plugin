@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.5.3</h3>
+        <ul><li>Closing the last chat now auto-spawns a fresh empty chat, so the tool window can't get stuck in the "Nothing to show" state.</li></ul>
         <h3>0.5.2</h3>
         <ul><li>"Close this chat" entry in the hamburger menu - always available, even when JetBrains hides the tab strip (which it does whenever only one chat tab is open).</li></ul>
         <h3>0.5.1</h3>
@@ -61,10 +63,4 @@
         <applicationConfigurable parentId="tools"
                                  instance="com.rixit.claude.settings.ClaudeSettingsConfigurable"
                                  id="com.rixit.claude.settings"
-                                 displayName="Claude AI Assistant"/>
-
-        <applicationService serviceImplementation="com.rixit.claude.settings.ClaudeSettings"/>
-    </extensions>
-
-    <actions>
-        
+                                

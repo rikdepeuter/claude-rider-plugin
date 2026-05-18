@@ -12,6 +12,8 @@ import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
+import com.intellij.ui.content.ContentManagerEvent
+import com.intellij.ui.content.ContentManagerListener
 import java.awt.AWTEvent
 import java.awt.Component
 import java.awt.Toolkit
@@ -38,6 +40,23 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
 
         // Middle-mouse on a tab header closes that chat.
         installMiddleClickClose(toolWindow)
+
+        // The tool window shows "Nothing to show" with zero contents. Closing
+        // the last chat should give the user a fresh empty chat, not strand
+        // them in that state.
+        toolWindow.contentManager.addContentManagerListener(object : ContentManagerListener {
+            override fun contentRemoved(event: ContentManagerEvent) {
+                if (toolWindow.contentManager.contents.isEmpty()) {
+                    // We're inside the removal callback; defer to the next EDT
+                    // tick so the content manager is in a settled state.
+                    SwingUtilities.invokeLater {
+                        if (!project.isDisposed && toolWindow.contentManager.contents.isEmpty()) {
+                            addNewChatTab(project, toolWindow)
+                        }
+                    }
+                }
+            }
+        })
     }
 
     /**
@@ -65,28 +84,4 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
                 if (c.javaClass.simpleName == "ContentTabLabel") {
                     val content = try {
                         c.javaClass.getMethod("getContent").invoke(c) as? Content
-                    } catch (_: Exception) { null }
-                    if (content != null && content.isCloseable) {
-                        toolWindow.contentManager.removeContent(content, true)
-                        event.consume()
-                    }
-                    return@AWTEventListener
-                }
-                c = c.parent
-            }
-        }
-        Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.MOUSE_EVENT_MASK)
-        Disposer.register(toolWindow.disposable, Disposable {
-            Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
-        })
-    }
-
-    companion object {
-        const val TOOL_WINDOW_ID = "ClaudeChat"
-
-        /**
-         * Add a new chat tab to the given tool window and select it.
-         * Returns the freshly created panel so callers can act on it (e.g.
-         * attach a file immediately).
-         */
-        fun addNewChatTab(project: Project, toolWindow: ToolWindow): ClaudeChatPanel
+    
