@@ -34,6 +34,7 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.event.ActionEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicReference
 import javax.imageio.ImageIO
@@ -210,29 +211,64 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     /**
      * Lets the user paste (Ctrl+V) or drag-drop images into the input area.
-     * Pasted images are added to [pendingImages] and shown as thumbnails;
-     * non-image clipboard content (text) falls through to the default
-     * TransferHandler so plain-text paste still works.
+     *
+     * Tries several clipboard / drop flavors in order:
+     *   1. AWT [DataFlavor.imageFlavor]   - typical for screenshots from the
+     *      OS clipboard (PrintScreen, Snipping Tool's "Copy to clipboard").
+     *   2. [DataFlavor.javaFileListFlavor] - typical when the user copies
+     *      image files from File Explorer or drops them onto the input box.
+     *      Each file is decoded with ImageIO.
+     *
+     * Anything else falls through to the default TransferHandler so plain
+     * text paste still works.
      */
     private fun installImagePasteHandler() {
         val original = input.transferHandler
         input.transferHandler = object : TransferHandler() {
             override fun canImport(support: TransferSupport): Boolean {
                 if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) return true
+                if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return true
                 return original?.canImport(support) ?: false
             }
+
             override fun importData(support: TransferSupport): Boolean {
+                // 1. AWT image (screenshots, programs that copy bitmaps).
                 if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) {
-                    return try {
-                        val img = support.transferable.getTransferData(DataFlavor.imageFlavor) as Image
-                        addPendingImage(img)
-                        true
+                    try {
+                        val img = support.transferable.getTransferData(DataFlavor.imageFlavor) as? Image
+                        if (img != null) {
+                            addPendingImage(img)
+                            return true
+                        }
                     } catch (_: Exception) {
-                        false
+                        // Some clipboards advertise imageFlavor but fail to
+                        // hand over an Image - fall through to file flavor.
                     }
                 }
+
+                // 2. File list (Explorer copy, drag-drop). Treat each file
+                // ImageIO can decode as a pasted image.
+                if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    try {
+                        @Suppress("UNCHECKED_CAST")
+                        val files = support.transferable
+                            .getTransferData(DataFlavor.javaFileListFlavor) as List<File>
+                        var addedAny = false
+                        for (file in files) {
+                            if (!file.isFile) continue
+                            val img = try { ImageIO.read(file) } catch (_: Exception) { null } ?: continue
+                            addPendingImage(img)
+                            addedAny = true
+                        }
+                        if (addedAny) return true
+                    } catch (_: Exception) {
+                        // fall through
+                    }
+                }
+
                 return original?.importData(support) ?: false
             }
+
             override fun getSourceActions(c: JComponent): Int =
                 original?.getSourceActions(c) ?: COPY_OR_MOVE
         }
@@ -405,46 +441,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     fun attachSelection() {
-        val ctx = EditorContextProvider.current(project)
-        if (ctx.selection.isNullOrEmpty()) {
-            appendHtml("<p style='color:orange;'>No text is selected in the editor.</p>")
-            return
-        }
-        val lang = ctx.language?.lowercase() ?: ""
-        val payload = "Attached selection from `${ctx.filePath}` near L${ctx.cursorLine}:\n\n" +
-            "```$lang\n${ctx.selection}\n```"
-        pendingAttachments += payload
-        appendHtml(
-            "<p style='color:gray;'>Attached selection " +
-                "(${ctx.selection.length} chars from ${escape(ctx.filePath ?: "?")})</p>"
-        )
-    }
-
-    // ---- internals --------------------------------------------------------------------
-
-    private fun onClear() {
-        history.clear()
-        pendingAttachments.clear()
-        pendingImages.clear()
-        refreshThumbnails()
-        streamingText = null
-        cancelAutoApprove()
-        transcriptHtml.clear()
-        renderTranscript()
-        appendHtml("<p style='color:gray;'>Conversation cleared.</p>")
-    }
-
-    private fun onSend() {
-        val text = input.text.trim()
-        // Resolve toggle-driven attachments at send time.
-        if (attachFileToggle.isSelected) attachCurrentFile()
-        if (attachSelectionToggle.isSelected) attachSelection()
-
-        if (text.isEmpty() && pendingAttachments.isEmpty() && pendingImages.isEmpty()) return
-
-        val ctx = EditorContextProvider.current(project)
-        val header = EditorContextProvider.headerLine(ctx)
-
-        // Build the structured content blocks for this user turn: any text
-        // (header + file attachments + the typed message) becomes one Text
-        // block, followed by an Image block per pa
+        val ctx = Edi
