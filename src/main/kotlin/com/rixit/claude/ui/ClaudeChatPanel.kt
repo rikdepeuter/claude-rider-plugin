@@ -93,6 +93,11 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         wrapStyleWord = true
         font = uiFont
     }
+    /** Slightly smaller font + tight margins for the inline action-row buttons. */
+    private val compactFont: Font = uiFont.deriveFont(11f)
+    private val compactInsets = java.awt.Insets(0, 6, 0, 6)
+    private val iconInsets = java.awt.Insets(0, 0, 0, 0)
+
     private val sendButton = JButton("Send").apply { font = uiFont }
 
     /**
@@ -110,11 +115,6 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         preferredSize = Dimension(20, 20)
         addActionListener { cancelInFlight() }
     }
-
-    /** Slightly smaller font + tight margins for the inline action-row buttons. */
-    private val compactFont: Font = uiFont.deriveFont(11f)
-    private val compactInsets = java.awt.Insets(0, 6, 0, 6)
-    private val iconInsets = java.awt.Insets(0, 0, 0, 0)
 
     /**
      * Toggle buttons (sticky): while pressed, the attachment is included on

@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.14.2</h3>
+        <ul><li>Build fix: stopButton declaration referenced iconInsets before it was initialized. Kotlin initializes properties in source order, so iconInsets had to move above the buttons that use it.</li></ul>
         <h3>0.14.1</h3>
         <ul><li>Toggle buttons (Current file / Selection / Plan) get an explicit empty border so the L&amp;F's default ButtonBorder no longer reserves padding even when isBorderPainted is false. Plan in particular is noticeably tighter now.</li></ul>
         <h3>0.14.0</h3>
@@ -37,5 +39,4 @@
         </ul>
         <h3>0.11.0</h3>
         <ul>
-            <li>Bottom controls consolidated into a single tight row: + dropdown, Current file toggle, Selection toggle on the left; Plan toggle + hamburger on the right. Smaller font and tighter margins make the row noticeably more compact.</li>
-            <li>"Agent" toggle replaced with "Plan" toggle (inverse semantics). Default off, meaning agent mode is on - Claude can read/edit files with the usual per-write confirmation. 
+            <li>Bottom controls consolidated into a single tight row: + dropdown, Current file toggle, Selection toggle on the left; Plan toggle + hamburger on the right. Smaller font and tighter 
