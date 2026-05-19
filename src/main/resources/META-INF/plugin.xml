@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.5</h3>
+        <ul><li>Middle-click tab close now duck-types on the tab label's getContent() method rather than matching ContentTabLabel by name, so it works on Rider builds where the tab label class is named differently. (You can also close a chat via the hamburger -> "Close this chat" at any time.)</li></ul>
         <h3>0.7.4</h3>
         <ul><li>Image paste now also accepts file-list clipboard contents (e.g. images copied from Explorer) and image files dropped onto the chat input. Previously only the AWT imageFlavor path worked, which many Windows screenshots / file-copy operations don't use.</li></ul>
         <h3>0.7.3</h3>
@@ -38,8 +40,4 @@
         <h3>0.5.0</h3>
         <ul>
             <li>Compact toolbar: attach toggles (sticky, with on/off visual state) on the left, "more options" hamburger on the right.</li>
-            <li>Model selector, agent-mode toggle, and Clear conversation now live in the hamburger menu (with a Custom... entry for free-form model strings).</li>
-            <li>Chat font set to Segoe UI Variable (falls back to Segoe UI / sans-serif when unavailable).</li>
-        </ul>
-        <h3>0.4.0</h3>
-        <ul><li>Middle-click on a chat tab header to close it.
+            <li>Model selector, agent-mode togg

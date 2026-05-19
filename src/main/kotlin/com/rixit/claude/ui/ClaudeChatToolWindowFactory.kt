@@ -83,5 +83,4 @@ class ClaudeChatToolWindowFactory : ToolWindowFactory {
             val src = event.source as? Component ?: return@AWTEventListener
             if (!SwingUtilities.isDescendingFrom(src, toolWindow.component)) return@AWTEventListener
 
-            var c: Component? = src
-         
+            // Walk up looking for any tab-la
