@@ -2,6 +2,7 @@ package com.rixit.claude.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.wm.ToolWindowManager
@@ -44,7 +45,6 @@ import javax.swing.AbstractAction
 import javax.swing.ButtonGroup
 import javax.swing.ImageIcon
 import javax.swing.JButton
-import javax.swing.JCheckBoxMenuItem
 import javax.swing.JComponent
 import javax.swing.JFileChooser
 import javax.swing.JLabel
@@ -100,13 +100,29 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
      * switching editors between sends works as you'd expect. Visually they
      * fill with the JetBrains accent blue when active.
      */
-    private val attachFileToggle: JToggleButton = AccentToggleButton("Attach current file").apply {
+    private val attachFileToggle: JToggleButton = AccentToggleButton("Current file").apply {
         toolTipText = "Click to arm: the active file will be attached on every send. Click again to disarm."
         font = uiFont
     }
-    private val attachSelectionToggle: JToggleButton = AccentToggleButton("Attach selection").apply {
+    private val attachSelectionToggle: JToggleButton = AccentToggleButton("Selection").apply {
         toolTipText = "Click to arm: the current editor selection will be attached on every send. Click again to disarm."
         font = uiFont
+    }
+
+    /** Top-level Agent mode toggle. Default on; click to disable. */
+    private val agentModeToggle: JToggleButton = AccentToggleButton("Agent").apply {
+        toolTipText =
+            "Agent mode on: Claude can read and edit files in this project. Every write " +
+                "asks for confirmation with a diff preview. Toggle off for plain streaming chat."
+        font = uiFont
+        isSelected = true
+    }
+
+    /** "+" button that opens a dropdown to attach files (browse or pick open editor file). */
+    private val plusButton: JButton = JButton(AllIcons.General.Add).apply {
+        toolTipText = "Attach a file: browse the filesystem or pick a currently open editor file."
+        isFocusable = false
+        addActionListener { showPlusMenu() }
     }
 
     /** Compact "more options" hamburger on the right side of the toolbar. */
@@ -127,11 +143,11 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
 
     /**
-     * Default ON: most users want Claude to be able to read/edit files in the
-     * project. Every write still requires confirmation via [ConfirmWriteDialog].
-     * Toggle off via the hamburger menu if you want plain streaming chat.
+     * Whether agent mode is currently armed. Source of truth is
+     * [agentModeToggle]; this getter is just a convenience.
      */
-    private var agentModeEnabled: Boolean = true
+    private val agentModeEnabled: Boolean
+        get() = agentModeToggle.isSelected
 
     private val history = mutableListOf<ApiMessage>()
     private val pendingAttachments = mutableListOf<String>()
@@ -210,41 +226,59 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             "<p style='color:gray;'>Hi! Set your Anthropic API key under " +
                 "<i>Settings &rarr; Tools &rarr; Claude AI Assistant</i>. " +
                 "Press <b>Ctrl+Enter</b> to send. " +
-                "<b>Agent mode is on</b> by default - Claude can read and edit files " +
-                "in this project (every write asks for confirmation with a diff preview). " +
-                "<b>Paste</b> (Ctrl+V) or <b>drag-drop</b> images and files into the input box, " +
-                "or pick files via the menu's <i>Attach files...</i> entry. " +
-                "Open the menu (top-right) for model selection, agent mode toggle, " +
-                "Clear, and Close this chat.</p>"
+                "Toggle <b>Current file</b> / <b>Selection</b> to attach editor context on every send. " +
+                "Click <b>+</b> to attach a file from disk or pick a currently open editor file. " +
+                "<b>Agent</b> is on by default - Claude can read and edit files " +
+                "(every write asks for confirmation with a diff preview). " +
+                "<b>Paste</b> (Ctrl+V) or <b>drag-drop</b> images and files into the input box. " +
+                "The menu on the far right has model selection, Clear, and Close this chat.</p>"
         )
     }
 
     private fun buildSouth(): JComponent {
-        val left = JPanel(FlowLayout(FlowLayout.LEFT, 4, 4)).apply {
-            add(attachFileToggle)
-            add(attachSelectionToggle)
-        }
-        val right = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 4)).apply {
-            add(menuButton)
-        }
-        val toolbar = JPanel(BorderLayout()).apply {
-            add(left, BorderLayout.WEST)
-            add(right, BorderLayout.EAST)
-        }
+        // Row 1: text input + Send button.
         val inputArea = JBScrollPane(input).apply { preferredSize = Dimension(400, 100) }
-        val row = JPanel(BorderLayout()).apply {
+        val inputRow = JPanel(BorderLayout()).apply {
             add(inputArea, BorderLayout.CENTER)
             add(sendButton, BorderLayout.EAST)
         }
-        // Pending thumbnails sit between the toolbar and the input row,
-        // collapsed (invisible) when there are no pasted images.
-        val inputStack = JPanel(BorderLayout()).apply {
-            add(thumbnailsStrip, BorderLayout.NORTH)
-            add(row, BorderLayout.CENTER)
+
+        // Row 2: pending thumbnails / file chips. Auto-hides when empty.
+
+        // Row 3: small inline attach toggles.
+        val attachRow = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+            add(attachFileToggle)
+            add(attachSelectionToggle)
         }
+
+        // Row 4: + dropdown + Agent toggle on the left, hamburger on the right.
+        val actionLeft = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+            add(plusButton)
+            add(agentModeToggle)
+        }
+        val actionRight = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 2)).apply {
+            add(menuButton)
+        }
+        val actionRow = JPanel(BorderLayout()).apply {
+            add(actionLeft, BorderLayout.WEST)
+            add(actionRight, BorderLayout.EAST)
+        }
+
+        // Stack rows 2/3/4 below the input row. BoxLayout keeps each at its
+        // preferred height; the thumbnails row collapses when invisible.
+        val rowsBelowInput = JPanel().apply {
+            layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
+            thumbnailsStrip.alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            attachRow.alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            actionRow.alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            add(thumbnailsStrip)
+            add(attachRow)
+            add(actionRow)
+        }
+
         return JPanel(BorderLayout()).apply {
-            add(toolbar, BorderLayout.NORTH)
-            add(inputStack, BorderLayout.CENTER)
+            add(inputRow, BorderLayout.NORTH)
+            add(rowsBelowInput, BorderLayout.CENTER)
         }
     }
 
@@ -397,40 +431,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     }
                 }
 
-                // 2. File list (Explorer copy, drag-drop). Each file is
-                // either ingested as an image or attached as text content.
-                if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                    try {
-                        @Suppress("UNCHECKED_CAST")
-                        val files = support.transferable
-                            .getTransferData(DataFlavor.javaFileListFlavor) as List<File>
-                        var addedAny = false
-                        for (file in files) {
-                            if (!file.isFile) continue
-                            if (addPendingFileFromDisk(file)) addedAny = true
-                        }
-                        if (addedAny) return true
-                    } catch (_: Exception) {
-                        // fall through
-                    }
-                }
-
-                return original?.importData(support) ?: false
-            }
-
-            override fun getSourceActions(c: JComponent): Int =
-                original?.getSourceActions(c) ?: COPY_OR_MOVE
-        }
-    }
-
-    private fun addPendingImage(image: Image) {
-        val w = image.getWidth(null)
-        val h = image.getHeight(null)
-        if (w <= 0 || h <= 0) return
-
-        val buffered = if (image is BufferedImage) image else {
-            val bi = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-            val g = bi.createGraphics()
-            g.drawImage(image, 0, 0, null)
-            g.dispose()
-   
+                // 2
