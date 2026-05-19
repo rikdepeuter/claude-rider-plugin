@@ -94,6 +94,11 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     private val sendButton = JButton("Send").apply { font = uiFont }
 
+    /** Slightly smaller font + tight margins for the inline action-row buttons. */
+    private val compactFont: Font = uiFont.deriveFont(11f)
+    private val compactInsets = java.awt.Insets(2, 8, 2, 8)
+    private val iconInsets = java.awt.Insets(2, 4, 2, 4)
+
     /**
      * Toggle buttons (sticky): while pressed, the attachment is included on
      * every send. The current file / selection is resolved at send time, so
@@ -102,26 +107,35 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
      */
     private val attachFileToggle: JToggleButton = AccentToggleButton("Current file").apply {
         toolTipText = "Click to arm: the active file will be attached on every send. Click again to disarm."
-        font = uiFont
+        font = compactFont
+        margin = compactInsets
     }
     private val attachSelectionToggle: JToggleButton = AccentToggleButton("Selection").apply {
         toolTipText = "Click to arm: the current editor selection will be attached on every send. Click again to disarm."
-        font = uiFont
+        font = compactFont
+        margin = compactInsets
     }
 
-    /** Top-level Agent mode toggle. Default on; click to disable. */
-    private val agentModeToggle: JToggleButton = AccentToggleButton("Agent").apply {
+    /**
+     * "Plan" toggle - the inverse of agent mode. Default off, which means
+     * agent mode is on (Claude can edit files, with the per-write
+     * confirmation dialog). Toggle ON for plan-only conversations where
+     * Claude reads/discusses but never edits.
+     */
+    private val planToggle: JToggleButton = AccentToggleButton("Plan").apply {
         toolTipText =
-            "Agent mode on: Claude can read and edit files in this project. Every write " +
-                "asks for confirmation with a diff preview. Toggle off for plain streaming chat."
-        font = uiFont
-        isSelected = true
+            "Plan mode: Claude only reads and discusses, never edits files. " +
+                "Toggle off (default) to let Claude edit, still with per-write confirmation."
+        font = compactFont
+        margin = compactInsets
+        isSelected = false
     }
 
     /** "+" button that opens a dropdown to attach files (browse or pick open editor file). */
     private val plusButton: JButton = JButton(AllIcons.General.Add).apply {
         toolTipText = "Attach a file: browse the filesystem or pick a currently open editor file."
         isFocusable = false
+        margin = iconInsets
         addActionListener { showPlusMenu() }
     }
 
@@ -129,6 +143,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val menuButton = JButton(AllIcons.Actions.More).apply {
         toolTipText = "More options"
         isFocusable = false
+        margin = iconInsets
         addActionListener { showOptionsMenu() }
     }
 
@@ -143,11 +158,12 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
 
     /**
-     * Whether agent mode is currently armed. Source of truth is
-     * [agentModeToggle]; this getter is just a convenience.
+     * Whether agent mode (file editing tools) is armed for the next send.
+     * Inverse of [planToggle] - "Plan" off (default) = agent on; "Plan" on
+     * = agent off (read-only conversation).
      */
     private val agentModeEnabled: Boolean
-        get() = agentModeToggle.isSelected
+        get() = !planToggle.isSelected
 
     private val history = mutableListOf<ApiMessage>()
     private val pendingAttachments = mutableListOf<String>()
@@ -228,8 +244,9 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                 "Press <b>Ctrl+Enter</b> to send. " +
                 "Toggle <b>Current file</b> / <b>Selection</b> to attach editor context on every send. " +
                 "Click <b>+</b> to attach a file from disk or pick a currently open editor file. " +
-                "<b>Agent</b> is on by default - Claude can read and edit files " +
-                "(every write asks for confirmation with a diff preview). " +
+                "<b>Plan</b> mode is off by default - Claude can edit files " +
+                "(every write asks for confirmation with a diff preview). Toggle Plan on for " +
+                "read-only conversations. " +
                 "<b>Paste</b> (Ctrl+V) or <b>drag-drop</b> images and files into the input box. " +
                 "The menu on the far right has model selection, Clear, and Close this chat.</p>"
         )
@@ -245,18 +262,16 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // Row 2: pending thumbnails / file chips. Auto-hides when empty.
 
-        // Row 3: small inline attach toggles.
-        val attachRow = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+        // Row 3 (single, tight): + dropdown, attach toggles, Plan toggle,
+        // hamburger. All on one line; left-aligned group on the left,
+        // right-aligned group on the right.
+        val actionLeft = JPanel(FlowLayout(FlowLayout.LEFT, 2, 0)).apply {
+            add(plusButton)
             add(attachFileToggle)
             add(attachSelectionToggle)
         }
-
-        // Row 4: + dropdown + Agent toggle on the left, hamburger on the right.
-        val actionLeft = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
-            add(plusButton)
-            add(agentModeToggle)
-        }
-        val actionRight = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 2)).apply {
+        val actionRight = JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0)).apply {
+            add(planToggle)
             add(menuButton)
         }
         val actionRow = JPanel(BorderLayout()).apply {
@@ -264,15 +279,14 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             add(actionRight, BorderLayout.EAST)
         }
 
-        // Stack rows 2/3/4 below the input row. BoxLayout keeps each at its
-        // preferred height; the thumbnails row collapses when invisible.
+        // Stack thumbnails + action row below the input. BoxLayout keeps
+        // each at its preferred height; the thumbnails row collapses when
+        // invisible.
         val rowsBelowInput = JPanel().apply {
             layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
             thumbnailsStrip.alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            attachRow.alignmentX = java.awt.Component.LEFT_ALIGNMENT
             actionRow.alignmentX = java.awt.Component.LEFT_ALIGNMENT
             add(thumbnailsStrip)
-            add(attachRow)
             add(actionRow)
         }
 
@@ -417,18 +431,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             }
 
             override fun importData(support: TransferSupport): Boolean {
-                // 1. AWT image (screenshots, programs that copy bitmaps).
-                if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) {
-                    try {
-                        val img = support.transferable.getTransferData(DataFlavor.imageFlavor) as? Image
-                        if (img != null) {
-                            addPendingImage(img)
-                            return true
-                        }
-                    } catch (_: Exception) {
-                        // Some clipboards advertise imageFlavor but fail to
-                        // hand over an Image - fall through to file flavor.
-                    }
-                }
-
-                // 2
+                // 1. AWT image (screenshots, programs that copy 
