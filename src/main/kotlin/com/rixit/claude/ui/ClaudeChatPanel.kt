@@ -2,6 +2,8 @@ package com.rixit.claude.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -46,7 +48,6 @@ import javax.swing.ButtonGroup
 import javax.swing.ImageIcon
 import javax.swing.JButton
 import javax.swing.JComponent
-import javax.swing.JFileChooser
 import javax.swing.JLabel
 import javax.swing.JMenu
 import javax.swing.JMenuItem
@@ -135,6 +136,9 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val plusButton: JButton = JButton(AllIcons.General.Add).apply {
         toolTipText = "Attach a file: browse the filesystem or pick a currently open editor file."
         isFocusable = false
+        isContentAreaFilled = false
+        isBorderPainted = false
+        isOpaque = false
         margin = iconInsets
         addActionListener { showPlusMenu() }
     }
@@ -143,6 +147,9 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val menuButton = JButton(AllIcons.Actions.More).apply {
         toolTipText = "More options"
         isFocusable = false
+        isContentAreaFilled = false
+        isBorderPainted = false
+        isOpaque = false
         margin = iconInsets
         addActionListener { showOptionsMenu() }
     }
@@ -390,20 +397,23 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         return true
     }
 
-    /** Opens a native file chooser; selected files become pending attachments. */
+    /**
+     * Opens IntelliJ's native file chooser; selected files become pending
+     * attachments. Accepts any file type - images are decoded, text files
+     * are read as UTF-8, binary non-image files get a chat warning and are
+     * skipped by [addPendingFileFromDisk].
+     */
     private fun browseForAttachments() {
-        val chooser = JFileChooser().apply {
-            fileSelectionMode = JFileChooser.FILES_ONLY
-            isMultiSelectionEnabled = true
-            project.basePath?.let { base ->
-                val dir = File(base)
-                if (dir.isDirectory) currentDirectory = dir
-            }
+        // createMultipleFilesNoJarsDescriptor: any file, multi-select, no
+        // weird jar-as-folder behavior.
+        val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor().apply {
+            title = "Attach Files"
+            description = "Pick files to attach to your next Claude message."
         }
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            for (file in chooser.selectedFiles) {
-                if (file.isFile) addPendingFileFromDisk(file)
-            }
+        val chosen = FileChooser.chooseFiles(descriptor, project, null)
+        for (vf in chosen) {
+            val ioFile = try { File(vf.path) } catch (_: Exception) { null } ?: continue
+            if (ioFile.isFile) addPendingFileFromDisk(ioFile)
         }
     }
 
@@ -422,13 +432,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
      * text paste still works.
      */
     private fun installImagePasteHandler() {
-        val original = input.transferHandler
-        input.transferHandler = object : TransferHandler() {
-            override fun canImport(support: TransferSupport): Boolean {
-                if (support.isDataFlavorSupported(DataFlavor.imageFlavor)) return true
-                if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return true
-                return original?.canImport(support) ?: false
-            }
-
-            override fun importData(support: TransferSupport): Boolean {
-                // 1. AWT image (screenshots, programs that copy 
+        val or
