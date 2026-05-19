@@ -14,6 +14,12 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.16.0</h3>
+        <ul>
+            <li>Markdown rendering: bold (**text**), italic (*text* / _text_), headings (#, ##, ###), bullet lists (-, *), numbered lists (1.), inline code (`), fenced code blocks (```). Previously only code was styled.</li>
+            <li>Pasted images now show in the user bubble as a real preview thumbnail. We write the thumbnail to a temp file and reference it via file:// in the transcript HTML, because JTextPane's HTML loader doesn't reliably resolve data: URIs.</li>
+            <li>On stream error mid-response, whatever partial text arrived before the failure is now preserved as the assistant turn (with the error message appended in red), instead of being dropped.</li>
+        </ul>
         <h3>0.15.0</h3>
         <ul>
             <li>When a streaming response ends abnormally (anything other than the normal "end_turn"), the transcript now shows a small amber note explaining why - typically "max_tokens" (response was truncated because the per-message token cap was hit) or "refusal" (the model declined). For max_tokens it links to the Max tokens setting.</li>
@@ -33,9 +39,4 @@
         <h3>0.13.0</h3>
         <ul>
             <li>Streaming responses no longer choke the EDT. Deltas accumulate into a buffer that's flushed to the JTextPane via a 50ms Timer, instead of re-rendering the entire HTML transcript on every chunk. Long replies appear smoothly now and the Send button no longer gets stuck on "Sending..." behind a backlog of paint events.</li>
-            <li>New <b>Stop</b> button appears to the left of Send while a request is in flight. Click it to cancel - the in-flight pooled task is interrupted, late callbacks are dropped via a generation counter, and the user turn is rolled back so you can edit and retry.</li>
-        </ul>
-        <h3>0.12.0</h3>
-        <ul>
-            <li>"+" menu Browse files... now opens IntelliJ's file chooser and accepts any file type (the previous Swing JFileChooser was sometimes filtering to images on some platforms). Text files are attached as-is; binary non-image files are rejected with a chat warning.</li>
-            <li>New "+" menu entry: "Image from clipboard" - appears when an image is on the system clipboard, so you can paste a screens
+            

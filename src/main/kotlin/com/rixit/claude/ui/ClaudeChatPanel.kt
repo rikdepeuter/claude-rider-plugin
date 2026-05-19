@@ -213,12 +213,16 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     /**
      * Images the user has pasted/dropped but not yet sent. Each entry carries
-     * raw bytes (for the API) and a thumbnail icon (for the strip).
+     * raw bytes (for the API), a thumbnail icon (for the pending strip), and
+     * the thumbnail also written to a temp file so it can be referenced via
+     * file:// from the transcript HTML - JTextPane's HTMLEditorKit doesn't
+     * reliably resolve data: URIs.
      */
     private data class PendingImage(
         val mediaType: String,
         val bytes: ByteArray,
-        val thumbnail: ImageIcon
+        val thumbnail: ImageIcon,
+        val thumbnailFile: File
     )
 
     /**
@@ -432,8 +436,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     /**
-     * Opens IntelliJ's native file chooser; selected files become pending
-     * attachments. Accepts any file type - images are decoded, text files
-     * are read as UTF-8, binary non-image files get a chat warning and are
-     * skipped by [addPendingFileFromDisk].
-   
+     * Opens IntelliJ's native file choose
