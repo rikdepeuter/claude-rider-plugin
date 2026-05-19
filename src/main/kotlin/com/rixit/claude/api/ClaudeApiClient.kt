@@ -55,7 +55,7 @@ object ClaudeApiClient {
         history: List<ApiMessage>,
         model: String? = null,
         onDelta: (String) -> Unit,
-        onDone: (String) -> Unit,
+        onDone: (String, stopReason: String?) -> Unit,
         onError: (Throwable) -> Unit
     ) {
         val req = try {
@@ -79,6 +79,7 @@ object ClaudeApiClient {
         }
 
         val full = StringBuilder()
+        var stopReason: String? = null
         try {
             resp.body().bufferedReader(Charsets.UTF_8).use { reader ->
                 var currentEvent: String? = null
@@ -88,15 +89,18 @@ object ClaudeApiClient {
                         line.startsWith("event:") -> currentEvent = line.substring(6).trim()
                         line.startsWith("data:")  -> {
                             val data = line.substring(5).trim()
-                            if (currentEvent == "content_block_delta") {
-                                handleDelta(data, full, onDelta)
+                            when (currentEvent) {
+                                "content_block_delta" -> handleDelta(data, full, onDelta)
+                                "message_delta" -> {
+                                    parseStopReason(data)?.let { stopReason = it }
+                                }
                             }
                         }
                         line.isEmpty()             -> currentEvent = null
                     }
                 }
             }
-            onDone(full.toString())
+            onDone(full.toString(), stopReason)
         } catch (e: Exception) {
             onError(ClaudeApiException("Stream error: ${e.message}"))
         }
@@ -114,6 +118,17 @@ object ClaudeApiClient {
             }
         } catch (_: Exception) {
             // Tolerate malformed SSE events rather than dying mid-stream.
+        }
+    }
+
+    /** Pulls stop_reason out of a message_delta SSE data payload. */
+    private fun parseStopReason(data: String): String? {
+        return try {
+            val obj = JsonParser.parseString(data).asJsonObject
+            val delta = obj.getAsJsonObject("delta") ?: return null
+            delta.get("stop_reason")?.takeIf { !it.isJsonNull }?.asString
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -200,16 +215,4 @@ object ClaudeApiClient {
 
     private fun parseResponse(json: String): AssistantTurn {
         val root = JsonParser.parseString(json).asJsonObject
-        val stopReason = root.get("stop_reason")?.takeIf { !it.isJsonNull }?.asString
-        val blocks = mutableListOf<ApiContent>()
-        val arr = root.getAsJsonArray("content") ?: return AssistantTurn(emptyList(), stopReason)
-        for (i in 0 until arr.size()) {
-            val obj = arr[i].asJsonObject
-            when (obj.get("type")?.asString) {
-                "text" -> {
-                    obj.get("text")?.asString?.let { blocks.add(ApiContent.Text(it)) }
-                }
-                "tool_use" -> {
-                    val id = obj.get("id")?.asString ?: continue
-                    val name = obj.get("name")?.asString ?: continue
-                    val input = obj.getAsJsonObject("input") ?: JsonObje
+        val stopReason = root.get("stop_reason")?.takeIf { !it.isJso

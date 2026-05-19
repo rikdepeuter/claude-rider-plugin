@@ -14,6 +14,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.15.0</h3>
+        <ul>
+            <li>When a streaming response ends abnormally (anything other than the normal "end_turn"), the transcript now shows a small amber note explaining why - typically "max_tokens" (response was truncated because the per-message token cap was hit) or "refusal" (the model declined). For max_tokens it links to the Max tokens setting.</li>
+            <li>Default Max tokens raised from 4096 to 8192. Long replies and big agent transcripts shouldn't get cut off as often. Existing users keep their saved value; this only affects fresh installs.</li>
+        </ul>
         <h3>0.14.2</h3>
         <ul><li>Build fix: stopButton declaration referenced iconInsets before it was initialized. Kotlin initializes properties in source order, so iconInsets had to move above the buttons that use it.</li></ul>
         <h3>0.14.1</h3>
@@ -33,10 +38,4 @@
         <h3>0.12.0</h3>
         <ul>
             <li>"+" menu Browse files... now opens IntelliJ's file chooser and accepts any file type (the previous Swing JFileChooser was sometimes filtering to images on some platforms). Text files are attached as-is; binary non-image files are rejected with a chat warning.</li>
-            <li>New "+" menu entry: "Image from clipboard" - appears when an image is on the system clipboard, so you can paste a screenshot without focusing the input.</li>
-            <li>Remove (X) buttons on pending attachments are now icon-only, borderless, 16x16 - much less visual weight.</li>
-            <li>Action-row buttons (attach toggles, Plan, +, hamburger) use a flat / borderless style, matching JetBrains AI Assistant's inline controls. Toggles still fill blue when armed.</li>
-        </ul>
-        <h3>0.11.0</h3>
-        <ul>
-            <li>Bottom controls consolidated into a single tight row: + dropdown, Current file toggle, Selection toggle on the left; Plan toggle + hamburger on the right. Smaller font and tighter 
+            <li>New "+" menu entry: "Image from clipboard" - appears when an image is on the system clipboard, so you can paste a screens
