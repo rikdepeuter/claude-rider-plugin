@@ -96,20 +96,25 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val sendButton = JButton("Send").apply { font = uiFont }
 
     /**
-     * Appears to the LEFT of Send while a request is in flight. Cancels
-     * the running pooled task and unblocks the UI. Hidden otherwise.
+     * Appears to the LEFT of Send while a request is in flight. Icon-only,
+     * borderless, compact. Hidden otherwise.
      */
-    private val stopButton: JButton = JButton("Stop").apply {
-        font = uiFont
+    private val stopButton: JButton = JButton(AllIcons.Actions.Suspend).apply {
         toolTipText = "Cancel the in-flight request"
         isVisible = false
+        isFocusable = false
+        isContentAreaFilled = false
+        isBorderPainted = false
+        isOpaque = false
+        margin = iconInsets
+        preferredSize = Dimension(20, 20)
         addActionListener { cancelInFlight() }
     }
 
     /** Slightly smaller font + tight margins for the inline action-row buttons. */
     private val compactFont: Font = uiFont.deriveFont(11f)
-    private val compactInsets = java.awt.Insets(2, 8, 2, 8)
-    private val iconInsets = java.awt.Insets(2, 4, 2, 4)
+    private val compactInsets = java.awt.Insets(0, 6, 0, 6)
+    private val iconInsets = java.awt.Insets(0, 0, 0, 0)
 
     /**
      * Toggle buttons (sticky): while pressed, the attachment is included on
@@ -151,6 +156,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         isBorderPainted = false
         isOpaque = false
         margin = iconInsets
+        preferredSize = Dimension(20, 20)
         addActionListener { showPlusMenu() }
     }
 
@@ -162,6 +168,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         isBorderPainted = false
         isOpaque = false
         margin = iconInsets
+        preferredSize = Dimension(20, 20)
         addActionListener { showOptionsMenu() }
     }
 
@@ -289,22 +296,14 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun buildSouth(): JComponent {
-        // Row 1: text input + (optional Stop) + Send button.
+        // Row 1: text input only (full width).
         val inputArea = JBScrollPane(input).apply { preferredSize = Dimension(400, 100) }
-        val sendCluster = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
-            add(stopButton)   // hidden by default, shown via setBusy
-            add(sendButton)
-        }
-        val inputRow = JPanel(BorderLayout()).apply {
-            add(inputArea, BorderLayout.CENTER)
-            add(sendCluster, BorderLayout.EAST)
-        }
 
         // Row 2: pending thumbnails / file chips. Auto-hides when empty.
 
-        // Row 3 (single, tight): + dropdown, attach toggles, Plan toggle,
-        // hamburger. All on one line; left-aligned group on the left,
-        // right-aligned group on the right.
+        // Row 3 (single, tight): on the left + dropdown and attach toggles;
+        // on the far right Plan, hamburger, Stop (icon, only while busy),
+        // and Send.
         val actionLeft = JPanel(FlowLayout(FlowLayout.LEFT, 2, 0)).apply {
             add(plusButton)
             add(attachFileToggle)
@@ -313,6 +312,8 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         val actionRight = JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0)).apply {
             add(planToggle)
             add(menuButton)
+            add(stopButton)
+            add(sendButton)
         }
         val actionRow = JPanel(BorderLayout()).apply {
             add(actionLeft, BorderLayout.WEST)
@@ -331,7 +332,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
 
         return JPanel(BorderLayout()).apply {
-            add(inputRow, BorderLayout.NORTH)
+            add(inputArea, BorderLayout.NORTH)
             add(rowsBelowInput, BorderLayout.CENTER)
         }
     }
@@ -433,4 +434,6 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     /**
      * Opens IntelliJ's native file chooser; selected files become pending
      * attachments. Accepts any file type - images are decoded, text files
-     * are read as UTF-8, binary non-image files get 
+     * are read as UTF-8, binary non-image files get a chat warning and are
+     * skipped by [addPendingFileFromDisk].
+   
