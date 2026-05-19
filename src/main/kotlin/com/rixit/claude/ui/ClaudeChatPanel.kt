@@ -254,8 +254,13 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     /** True if the system clipboard had an image or file we could consume. */
     private fun tryAcceptClipboardAttachments(): Boolean {
-        val transferable = try { Toolkit.getDefaultToolkit().systemClipboard.contents } catch (_: Exception) { null }
-            ?: return false
+        val transferable = try {
+            // Clipboard.contents is protected; getContents(requestor) is the
+            // public accessor. Passing null is allowed.
+            Toolkit.getDefaultToolkit().systemClipboard.getContents(null)
+        } catch (_: Exception) {
+            null
+        } ?: return false
         return tryAcceptTransferable(transferable)
     }
 
@@ -428,11 +433,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             val g = bi.createGraphics()
             g.drawImage(image, 0, 0, null)
             g.dispose()
-            bi
-        }
-
-        val baos = ByteArrayOutputStream()
-        ImageIO.write(buffered, "png", baos)
-        val bytes = baos.toByteArray()
-
-        val thumb = m
+   
