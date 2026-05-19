@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.3</h3>
+        <ul><li>Fix NPE in AccentToggleButton.getForeground during initialization that prevented the tool window factory from constructing the chat panel, which is why everyone since 0.5.x was seeing "Nothing to show". The bug was a Kotlin non-null return type on an overridden Swing method that the L&amp;F's installColors calls before subclass fields are set.</li></ul>
         <h3>0.7.2</h3>
         <ul><li>Ctrl+Alt+K (or Tools -> Open Claude AI Assistant) is now a recovery action: opens the tool window AND seeds a fresh chat tab if it's empty. Works even when the tool window factory hasn't run for some reason.</li></ul>
         <h3>0.7.1</h3>
@@ -44,13 +46,4 @@
         <h3>0.3.1</h3>
         <ul>
             <li>Build script auto-refreshes plugin.zip on every gradle buildPlugin.</li>
-            <li>New auto-build.bat / auto-build.ps1: run once, the plugin rebuilds on every file edit.</li>
-        </ul>
-        <h3>0.3.0</h3>
-        <ul>
-            <li>Renamed to "Claude AI Assistant".</li>
-        </ul>
-        <h3>0.2.0</h3>
-        <ul>
-            <li>Agent mode: Claude can read, edit, and create files in the project (per-write confirmation with diff preview).</li>
-            <li>Auto-approve writes fo
+            <li>New auto-build.bat / a
