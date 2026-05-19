@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.8.0</h3>
+        <ul><li>Agent mode is now ON by default in new chats. Claude can read, edit, and create files in the project right away. Every write still requires your approval with diff preview (toggle agent mode off in the hamburger menu for plain streaming chat).</li></ul>
         <h3>0.7.5</h3>
         <ul><li>Middle-click tab close now duck-types on the tab label's getContent() method rather than matching ContentTabLabel by name, so it works on Rider builds where the tab label class is named differently. (You can also close a chat via the hamburger -> "Close this chat" at any time.)</li></ul>
         <h3>0.7.4</h3>
@@ -36,8 +38,4 @@
         <h3>0.5.2</h3>
         <ul><li>"Close this chat" entry in the hamburger menu - always available, even when JetBrains hides the tab strip (which it does whenever only one chat tab is open).</li></ul>
         <h3>0.5.1</h3>
-        <ul><li>Attach toggle buttons now paint with an accent-blue background when armed, so the on/off state is obvious in any theme.</li></ul>
-        <h3>0.5.0</h3>
-        <ul>
-            <li>Compact toolbar: attach toggles (sticky, with on/off visual state) on the left, "more options" hamburger on the right.</li>
-            <li>Model selector, agent-mode togg
+        <ul><li>Attach toggle buttons now paint with an accent-blue backgrou

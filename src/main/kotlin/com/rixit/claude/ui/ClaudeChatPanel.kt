@@ -123,7 +123,12 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             ClaudeSettings.getInstance().state.model = value
         }
 
-    private var agentModeEnabled: Boolean = false
+    /**
+     * Default ON: most users want Claude to be able to read/edit files in the
+     * project. Every write still requires confirmation via [ConfirmWriteDialog].
+     * Toggle off via the hamburger menu if you want plain streaming chat.
+     */
+    private var agentModeEnabled: Boolean = true
 
     private val history = mutableListOf<ApiMessage>()
     private val pendingAttachments = mutableListOf<String>()
@@ -173,8 +178,11 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             "<p style='color:gray;'>Hi! Set your Anthropic API key under " +
                 "<i>Settings &rarr; Tools &rarr; Claude AI Assistant</i>. " +
                 "Press <b>Ctrl+Enter</b> to send. " +
+                "<b>Agent mode is on</b> by default - Claude can read and edit files " +
+                "in this project (every write asks for confirmation with a diff preview). " +
                 "<b>Paste images</b> (Ctrl+V) or drop them into the input box to send screenshots. " +
-                "Open the menu (top-right) for model selection, agent mode, and Clear.</p>"
+                "Open the menu (top-right) for model selection, agent mode toggle, " +
+                "Clear, and Close this chat.</p>"
         )
     }
 
@@ -428,17 +436,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     fun attachCurrentFile() {
         val ctx = EditorContextProvider.current(project)
         if (ctx.fileText == null) {
-            appendHtml("<p style='color:orange;'>No file is currently open.</p>")
-            return
-        }
-        val lang = ctx.language?.lowercase() ?: ""
-        val payload = "Attached file: `${ctx.filePath}`\n\n```$lang\n${ctx.fileText}\n```"
-        pendingAttachments += payload
-        appendHtml(
-            "<p style='color:gray;'>Attached current file: ${escape(ctx.filePath ?: "")} " +
-                "(${ctx.fileText.length} chars)</p>"
-        )
-    }
-
-    fun attachSelection() {
-        val ctx = Edi
+            appendHtml("<p style='color:oran
