@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.8.1</h3>
+        <ul><li>Middle-click tab close now handles modern JBTabs - the tab label's getInfo()-&gt;TabInfo-&gt;getObject() path (used by Rider 2024.x+/2025.x) in addition to the older ContentTabLabel.getContent().</li></ul>
         <h3>0.8.0</h3>
         <ul><li>Agent mode is now ON by default in new chats. Claude can read, edit, and create files in the project right away. Every write still requires your approval with diff preview (toggle agent mode off in the hamburger menu for plain streaming chat).</li></ul>
         <h3>0.7.5</h3>
@@ -36,6 +38,4 @@
         <h3>0.5.3</h3>
         <ul><li>Closing the last chat now auto-spawns a fresh empty chat, so the tool window can't get stuck in the "Nothing to show" state.</li></ul>
         <h3>0.5.2</h3>
-        <ul><li>"Close this chat" entry in the hamburger menu - always available, even when JetBrains hides the tab strip (which it does whenever only one chat tab is open).</li></ul>
-        <h3>0.5.1</h3>
-        <ul><li>Attach toggle buttons now paint with an accent-blue backgrou
+        <ul><li>"Close this chat" entr
