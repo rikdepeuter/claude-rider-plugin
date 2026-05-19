@@ -95,6 +95,17 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     private val sendButton = JButton("Send").apply { font = uiFont }
 
+    /**
+     * Appears to the LEFT of Send while a request is in flight. Cancels
+     * the running pooled task and unblocks the UI. Hidden otherwise.
+     */
+    private val stopButton: JButton = JButton("Stop").apply {
+        font = uiFont
+        toolTipText = "Cancel the in-flight request"
+        isVisible = false
+        addActionListener { cancelInFlight() }
+    }
+
     /** Slightly smaller font + tight margins for the inline action-row buttons. */
     private val compactFont: Font = uiFont.deriveFont(11f)
     private val compactInsets = java.awt.Insets(2, 8, 2, 8)
@@ -174,6 +185,24 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val history = mutableListOf<ApiMessage>()
     private val pendingAttachments = mutableListOf<String>()
+
+    /**
+     * Monotonically-increasing token. Each onSend bumps it; the callbacks
+     * compare against this before applying their result, so a late onDone
+     * from a cancelled request silently drops on the floor instead of
+     * appending stale text or re-enabling Send mid-new-request.
+     */
+    private var requestGeneration: Long = 0
+
+    /** Future of the in-flight pooled task, so the Stop button can interrupt it. */
+    private var pendingFuture: java.util.concurrent.Future<*>? = null
+
+    /** Repaint coalescer: streaming deltas accumulate into `streamingText`,
+     *  this timer flushes them to the JTextPane at a fixed rate. Without it
+     *  the EDT chokes on every-delta full-HTML re-renders. */
+    private val streamRefreshTimer = Timer(50) {
+        if (streamingText != null) renderTranscript()
+    }.apply { isRepeats = true }
 
     /**
      * Images the user has pasted/dropped but not yet sent. Each entry carries
@@ -260,11 +289,15 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun buildSouth(): JComponent {
-        // Row 1: text input + Send button.
+        // Row 1: text input + (optional Stop) + Send button.
         val inputArea = JBScrollPane(input).apply { preferredSize = Dimension(400, 100) }
+        val sendCluster = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
+            add(stopButton)   // hidden by default, shown via setBusy
+            add(sendButton)
+        }
         val inputRow = JPanel(BorderLayout()).apply {
             add(inputArea, BorderLayout.CENTER)
-            add(sendButton, BorderLayout.EAST)
+            add(sendCluster, BorderLayout.EAST)
         }
 
         // Row 2: pending thumbnails / file chips. Auto-hides when empty.
@@ -400,36 +433,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     /**
      * Opens IntelliJ's native file chooser; selected files become pending
      * attachments. Accepts any file type - images are decoded, text files
-     * are read as UTF-8, binary non-image files get a chat warning and are
-     * skipped by [addPendingFileFromDisk].
-     */
-    private fun browseForAttachments() {
-        // createMultipleFilesNoJarsDescriptor: any file, multi-select, no
-        // weird jar-as-folder behavior.
-        val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor().apply {
-            title = "Attach Files"
-            description = "Pick files to attach to your next Claude message."
-        }
-        val chosen = FileChooser.chooseFiles(descriptor, project, null)
-        for (vf in chosen) {
-            val ioFile = try { File(vf.path) } catch (_: Exception) { null } ?: continue
-            if (ioFile.isFile) addPendingFileFromDisk(ioFile)
-        }
-    }
-
-    /**
-     * Lets the user paste (Ctrl+V) or drag-drop images / files into the
-     * input area.
-     *
-     * Tries several clipboard / drop flavors in order:
-     *   1. AWT [DataFlavor.imageFlavor]   - typical for screenshots from the
-     *      OS clipboard (PrintScreen, Snipping Tool's "Copy to clipboard").
-     *   2. [DataFlavor.javaFileListFlavor] - typical when the user copies
-     *      files from File Explorer or drags them onto the input box. Images
-     *      go through ImageIO; other files are read as text.
-     *
-     * Anything else falls through to the default TransferHandler so plain
-     * text paste still works.
-     */
-    private fun installImagePasteHandler() {
-        val or
+     * are read as UTF-8, binary non-image files get 

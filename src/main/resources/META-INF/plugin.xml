@@ -14,6 +14,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.13.0</h3>
+        <ul>
+            <li>Streaming responses no longer choke the EDT. Deltas accumulate into a buffer that's flushed to the JTextPane via a 50ms Timer, instead of re-rendering the entire HTML transcript on every chunk. Long replies appear smoothly now and the Send button no longer gets stuck on "Sending..." behind a backlog of paint events.</li>
+            <li>New <b>Stop</b> button appears to the left of Send while a request is in flight. Click it to cancel - the in-flight pooled task is interrupted, late callbacks are dropped via a generation counter, and the user turn is rolled back so you can edit and retry.</li>
+        </ul>
         <h3>0.12.0</h3>
         <ul>
             <li>"+" menu Browse files... now opens IntelliJ's file chooser and accepts any file type (the previous Swing JFileChooser was sometimes filtering to images on some platforms). Text files are attached as-is; binary non-image files are rejected with a chat warning.</li>
@@ -33,10 +38,4 @@
             <li>The "+" dropdown's "Open editor files" section reads from FileEditorManager - one click attaches a file you already have open.</li>
         </ul>
         <h3>0.9.2</h3>
-        <ul><li>Build fix: 'return@try' isn't valid Kotlin (try blocks aren't labeled scopes). Restructured tryExtractContent to wrap the body in try/catch with regular function-level returns.</li></ul>
-        <h3>0.9.1</h3>
-        <ul><li>Build fix: 0.9.0 didn't compile (protected Clipboard.contents access + a chained ?.let { return@try ... } that the Kotlin parser couldn't make sense of). Same feature set, now actually buildable.</li></ul>
-        <h3>0.9.0</h3>
-        <ul>
-            <li>Attach arbitrary files to a message: via the hamburger menu's <i>Attach files...</i> entry, by drag-dropping onto the input box, or by Ctrl+V from the system clipboard.</li>
-            <li>Pending file attachments now appear alongside image thumbnails above the input, each with a small X 
+        <ul><li>Build fix: 'return@try' isn't valid Kotlin (try blocks aren't labeled scopes). Restructured tryExtractCont
