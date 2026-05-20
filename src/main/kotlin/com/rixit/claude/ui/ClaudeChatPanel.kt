@@ -126,6 +126,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         toolTipText = "Click to arm: the active file will be attached on every send. Click again to disarm."
         font = compactFont
         margin = compactInsets
+        isSelected = true
     }
     private val attachSelectionToggle: JToggleButton = AccentToggleButton("Selection").apply {
         toolTipText = "Click to arm: the current editor selection will be attached on every send. Click again to disarm."
@@ -439,4 +440,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
         val chosen = FileChooser.chooseFiles(descriptor, project, null)
         for (vf in chosen) {
-            val ioFile = try { File(vf.path) } catch (_: Exception) { null } ?:
+            val ioFile = try { File(vf.path) } catch 

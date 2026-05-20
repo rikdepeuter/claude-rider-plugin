@@ -14,6 +14,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.18.0</h3>
+        <ul>
+            <li>User chat bubbles get a subtle gray underlay so you can tell at a glance which text you wrote and which Claude wrote. Picks a darker tint on light themes and a lighter tint on dark themes from the transcript's actual background.</li>
+            <li>"Current file" attach toggle is now on by default in new chats. Toggle off if you don't want the active editor file attached to every send.</li>
+        </ul>
         <h3>0.17.0</h3>
         <ul>
             <li>Appending to the transcript now uses HTMLEditorKit.insertHTML at the document tail instead of rewriting the entire JTextPane content on every append. Fixes the "after a long reply, new messages stop showing" problem - that was a re-parse stall on the growing HTML, not an event-handling bug.</li>
@@ -35,8 +40,4 @@
         <h3>0.14.2</h3>
         <ul><li>Build fix: stopButton declaration referenced iconInsets before it was initialized. Kotlin initializes properties in source order, so iconInsets had to move above the buttons that use it.</li></ul>
         <h3>0.14.1</h3>
-        <ul><li>Toggle buttons (Current file / Selection / Plan) get an explicit empty border so the L&amp;F's default ButtonBorder no longer reserves padding even when isBorderPainted is false. Plan in particular is noticeably tighter now.</li></ul>
-        <h3>0.14.0</h3>
-        <ul>
-            <li>Text input now spans the full panel width. Send + Stop moved to the action row's far right.</li>
-            <li>Action row consolidated: + and attach toggles on the left; Plan, hamburger, Stop (icon, visible only while 
+        <ul><li>Toggle buttons (Current file / Selection / Pla
