@@ -14,6 +14,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.19.0</h3>
+        <ul>
+            <li>Pending attachments (image thumbnails / file chips) now appear ABOVE the input box instead of below. The input and action row stay anchored to the bottom, so adding attachments no longer shifts the input position.</li>
+            <li>Ctrl+V image paste now actually works. Switched from a keymap binding (which IntelliJ's IdeKeyEventDispatcher was intercepting) to overriding JBTextArea.paste() directly - this catches paste no matter how the IDE routes the keystroke.</li>
+        </ul>
         <h3>0.18.4</h3>
         <ul><li>Inline code (text in `backticks`) now renders with red text on a light pink background instead of the dark Darcula look, matching common documentation styling.</li></ul>
         <h3>0.18.3</h3>
@@ -28,9 +33,4 @@
         <h3>0.18.0</h3>
         <ul>
             <li>User chat bubbles get a subtle gray underlay so you can tell at a glance which text you wrote and which Claude wrote. Picks a darker tint on light themes and a lighter tint on dark themes from the transcript's actual background.</li>
-            <li>"Current file" attach toggle is now on by default in new chats. Toggle off if you don't want the active editor file attached to every send.</li>
-        </ul>
-        <h3>0.17.0</h3>
-        <ul>
-            <li>Appending to the transcript now uses HTMLEditorKit.insertHTML at the document tail instead of rewriting the entire JTextPane content on every append. Fixes the "after a long reply, new messages stop showing" problem - that was a re-parse stall on the growing HTML, not an event-handling bug.</li>
-            <li>When a stream closes 
+            <li>"Cur

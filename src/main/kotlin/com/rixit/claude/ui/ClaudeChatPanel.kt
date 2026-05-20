@@ -88,7 +88,22 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         font = uiFont
     }
     private val transcriptHtml = StringBuilder()
-    private val input = JBTextArea(4, 50).apply {
+    /**
+     * The chat input. We override [JBTextArea.paste] so that Ctrl+V routes
+     * through our clipboard-attachment handler before falling through to
+     * the regular text paste. IntelliJ's IdeKeyEventDispatcher consumes
+     * Ctrl+V at the IDE action level and dispatches the standard $Paste
+     * action, which ultimately calls comp.paste() on the focused component.
+     * Overriding paste() catches that path; the keymap binding we added
+     * earlier was firing too late (or being shadowed by the IDE action).
+     */
+    private val input: JBTextArea = object : JBTextArea(4, 50) {
+        override fun paste() {
+            if (!tryAcceptClipboardAttachments()) {
+                super.paste()
+            }
+        }
+    }.apply {
         lineWrap = true
         wrapStyleWord = true
         font = uiFont
@@ -290,14 +305,10 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun buildSouth(): JComponent {
-        // Row 1: text input only (full width).
         val inputArea = JBScrollPane(input).apply { preferredSize = Dimension(400, 100) }
 
-        // Row 2: pending thumbnails / file chips. Auto-hides when empty.
-
-        // Row 3 (single, tight): on the left + dropdown and attach toggles;
-        // on the far right Plan, hamburger, Stop (icon, only while busy),
-        // and Send.
+        // Action row: + and attach toggles on the left; Plan, hamburger,
+        // optional Stop, and Send on the right.
         val actionLeft = JPanel(FlowLayout(FlowLayout.LEFT, 2, 0)).apply {
             add(plusButton)
             add(attachFileToggle)
@@ -314,20 +325,14 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             add(actionRight, BorderLayout.EAST)
         }
 
-        // Stack thumbnails + action row below the input. BoxLayout keeps
-        // each at its preferred height; the thumbnails row collapses when
-        // invisible.
-        val rowsBelowInput = JPanel().apply {
-            layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
-            thumbnailsStrip.alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            actionRow.alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            add(thumbnailsStrip)
-            add(actionRow)
-        }
-
+        // Layout: thumbnails on top (auto-hide when empty), text input in
+        // the middle, action row anchored to the bottom. With thumbnails
+        // pushed above the input, the input box stays at the same vertical
+        // position when attachments are added or removed.
         return JPanel(BorderLayout()).apply {
-            add(inputArea, BorderLayout.NORTH)
-            add(rowsBelowInput, BorderLayout.CENTER)
+            add(thumbnailsStrip, BorderLayout.NORTH)
+            add(inputArea, BorderLayout.CENTER)
+            add(actionRow, BorderLayout.SOUTH)
         }
     }
 
@@ -434,10 +439,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun browseForAttachments() {
         // createMultipleFilesNoJarsDescriptor: any file, multi-select, no
         // weird jar-as-folder behavior.
-        val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor().apply {
-            title = "Attach Files"
-            description = "Pick files to attach to your next Claude message."
-        }
-        val chosen = FileChooser.chooseFiles(descriptor, project, null)
-        for (vf in chosen) {
-            val ioFile = try { File(vf.path) } catch 
+        val descriptor = Fi
