@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.18.1</h3>
+        <ul><li>Stream-end note is now always shown. A subtle gray "(end_turn)" / "(stop_sequence)" / "(tool_use)" tag confirms a response completed normally; amber "(max_tokens ...)" / "(stream ended unexpectedly ...)" still flag abnormal endings. Replies that look truncated mid-thought but were actually end_turn are now obvious instead of mysterious.</li></ul>
         <h3>0.18.0</h3>
         <ul>
             <li>User chat bubbles get a subtle gray underlay so you can tell at a glance which text you wrote and which Claude wrote. Picks a darker tint on light themes and a lighter tint on dark themes from the transcript's actual background.</li>
@@ -35,9 +37,4 @@
         <h3>0.15.0</h3>
         <ul>
             <li>When a streaming response ends abnormally (anything other than the normal "end_turn"), the transcript now shows a small amber note explaining why - typically "max_tokens" (response was truncated because the per-message token cap was hit) or "refusal" (the model declined). For max_tokens it links to the Max tokens setting.</li>
-            <li>Default Max tokens raised from 4096 to 8192. Long replies and big agent transcripts shouldn't get cut off as often. Existing users keep their saved value; this only affects fresh installs.</li>
-        </ul>
-        <h3>0.14.2</h3>
-        <ul><li>Build fix: stopButton declaration referenced iconInsets before it was initialized. Kotlin initializes properties in source order, so iconInsets had to move above the buttons that use it.</li></ul>
-        <h3>0.14.1</h3>
-        <ul><li>Toggle buttons (Current file / Selection / Pla
+            <li>Default Max tokens raised from 4096 to 8192. Long replies and big agent transcripts shouldn't get cut off as often. Existing users keep their 
