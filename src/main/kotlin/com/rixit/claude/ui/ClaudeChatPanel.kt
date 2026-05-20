@@ -285,18 +285,7 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         installImagePasteHandler()
 
-        appendHtml(
-            "<p style='color:gray;'>Hi! Set your Anthropic API key under " +
-                "<i>Settings &rarr; Tools &rarr; Claude AI Assistant</i>. " +
-                "Press <b>Ctrl+Enter</b> to send. " +
-                "Toggle <b>Current file</b> / <b>Selection</b> to attach editor context on every send. " +
-                "Click <b>+</b> to attach a file from disk or pick a currently open editor file. " +
-                "<b>Plan</b> mode is off by default - Claude can edit files " +
-                "(every write asks for confirmation with a diff preview). Toggle Plan on for " +
-                "read-only conversations. " +
-                "<b>Paste</b> (Ctrl+V) or <b>drag-drop</b> images and files into the input box. " +
-                "The menu on the far right has model selection, Clear, and Close this chat.</p>"
-        )
+        appendHtml("<p style='color:gray;'>Hi! I'm here to help.</p>")
     }
 
     private fun buildSouth(): JComponent {
@@ -436,4 +425,18 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     /**
-     * Opens IntelliJ's native file choose
+     * Opens IntelliJ's native file chooser; selected files become pending
+     * attachments. Accepts any file type - images are decoded, text files
+     * are read as UTF-8, binary non-image files get a chat warning and are
+     * skipped by [addPendingFileFromDisk].
+     */
+    private fun browseForAttachments() {
+        // createMultipleFilesNoJarsDescriptor: any file, multi-select, no
+        // weird jar-as-folder behavior.
+        val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor().apply {
+            title = "Attach Files"
+            description = "Pick files to attach to your next Claude message."
+        }
+        val chosen = FileChooser.chooseFiles(descriptor, project, null)
+        for (vf in chosen) {
+            val ioFile = try { File(vf.path) } catch (_: Exception) { null } ?:

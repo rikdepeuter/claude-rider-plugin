@@ -14,6 +14,13 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.17.0</h3>
+        <ul>
+            <li>Appending to the transcript now uses HTMLEditorKit.insertHTML at the document tail instead of rewriting the entire JTextPane content on every append. Fixes the "after a long reply, new messages stop showing" problem - that was a re-parse stall on the growing HTML, not an event-handling bug.</li>
+            <li>When a stream closes without a stop_reason (transient network blip, server-side cutoff), the transcript now shows a small amber "(stream ended unexpectedly...)" note instead of leaving you guessing.</li>
+            <li>New brain icon for the tool window stripe button.</li>
+            <li>Welcome message shortened to "Hi! I'm here to help."</li>
+        </ul>
         <h3>0.16.0</h3>
         <ul>
             <li>Markdown rendering: bold (**text**), italic (*text* / _text_), headings (#, ##, ###), bullet lists (-, *), numbered lists (1.), inline code (`), fenced code blocks (```). Previously only code was styled.</li>
@@ -32,11 +39,4 @@
         <h3>0.14.0</h3>
         <ul>
             <li>Text input now spans the full panel width. Send + Stop moved to the action row's far right.</li>
-            <li>Action row consolidated: + and attach toggles on the left; Plan, hamburger, Stop (icon, visible only while busy), and Send on the right.</li>
-            <li>Buttons tightened: + and hamburger and Stop are zero-padding 20x20 icons; toggle buttons (Current file / Selection / Plan) lose vertical padding and use 6px horizontal padding.</li>
-            <li>Stop is now an icon (AllIcons.Actions.Suspend) instead of a text button.</li>
-        </ul>
-        <h3>0.13.0</h3>
-        <ul>
-            <li>Streaming responses no longer choke the EDT. Deltas accumulate into a buffer that's flushed to the JTextPane via a 50ms Timer, instead of re-rendering the entire HTML transcript on every chunk. Long replies appear smoothly now and the Send button no longer gets stuck on "Sending..." behind a backlog of paint events.</li>
-            
+            <li>Action row consolidated: + and attach toggles on the left; Plan, hamburger, Stop (icon, visible only while 
