@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.rixit"
-version = "0.19.0"
+version = "0.20.0"
 
 repositories {
     mavenCentral()

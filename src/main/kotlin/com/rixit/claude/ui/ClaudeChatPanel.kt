@@ -2,6 +2,7 @@ package com.rixit.claude.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -80,12 +81,22 @@ import javax.swing.TransferHandler
  */
 class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
+    private val log = Logger.getInstance(ClaudeChatPanel::class.java)
+
     private val uiFont: Font = pickUiFont()
 
     private val transcript = JTextPane().apply {
         isEditable = false
         contentType = "text/html"
         font = uiFont
+        // Stamp our own rules onto the HTMLEditorKit's stylesheet so the
+        // default `code { ... }` rule can't shadow our inline styles. Sets
+        // a safe baseline; per-element inline `style=...` further refines.
+        (editorKit as? javax.swing.text.html.HTMLEditorKit)?.styleSheet?.apply {
+            addRule("body { font-family: '${uiFont.family}','Segoe UI Variable','Segoe UI',sans-serif; }")
+            addRule("code { background: #fbe9e7; color: #c5221f; font-family: Consolas, monospace; }")
+            addRule("pre { background: #f6f8fa; color: #24292e; }")
+        }
     }
     private val transcriptHtml = StringBuilder()
     /**
@@ -99,8 +110,12 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
      */
     private val input: JBTextArea = object : JBTextArea(4, 50) {
         override fun paste() {
+            log.info("paste() called on chat input")
             if (!tryAcceptClipboardAttachments()) {
+                log.info("paste(): no clipboard image/file, falling through to text paste")
                 super.paste()
+            } else {
+                log.info("paste(): consumed clipboard image/file as attachment")
             }
         }
     }.apply {
@@ -346,9 +361,12 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             // Clipboard.contents is protected; getContents(requestor) is the
             // public accessor. Passing null is allowed.
             Toolkit.getDefaultToolkit().systemClipboard.getContents(null)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.warn("clipboard read failed", e)
             null
         } ?: return false
+        val flavors = transferable.transferDataFlavors.joinToString { it.humanPresentableName }
+        log.info("clipboard flavors: $flavors")
         return tryAcceptTransferable(transferable)
     }
 
@@ -411,32 +429,4 @@ class ClaudeChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // Sniff for null bytes in the first kilobyte - very likely binary.
         if (effective.take(1024).any { it == 0.toByte() }) {
-            appendHtml(
-                "<p style='color:orange;'>${escape(file.name)} looks like a binary file " +
-                    "(not text and not a recognised image). Not attached.</p>"
-            )
-            return false
-        }
-
-        val content = String(effective, Charsets.UTF_8)
-        pendingFiles += PendingFile(
-            displayPath = file.absolutePath,
-            displayName = file.name + if (truncated) " [truncated]" else "",
-            content = if (truncated)
-                content + "\n\n[... truncated at $maxBytes bytes; total ${raw.size} bytes ...]"
-            else content
-        )
-        refreshThumbnails()
-        return true
-    }
-
-    /**
-     * Opens IntelliJ's native file chooser; selected files become pending
-     * attachments. Accepts any file type - images are decoded, text files
-     * are read as UTF-8, binary non-image files get a chat warning and are
-     * skipped by [addPendingFileFromDisk].
-     */
-    private fun browseForAttachments() {
-        // createMultipleFilesNoJarsDescriptor: any file, multi-select, no
-        // weird jar-as-folder behavior.
-        val descriptor = Fi
+ 
