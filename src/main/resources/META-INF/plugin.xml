@@ -14,6 +14,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.18.4</h3>
+        <ul><li>Inline code (text in `backticks`) now renders with red text on a light pink background instead of the dark Darcula look, matching common documentation styling.</li></ul>
         <h3>0.18.3</h3>
         <ul><li>Fix the "response cuts off after a few characters" bug. Root cause was a NullPointerException inside Swing's HTML CSS parser when rendering markdown output: properties like border-radius, white-space:pre-wrap, max-height and four-value margin shorthand aren't supported by JTextPane's CSS, and at least one of them was tripping CSS.getInternalCSSValue when parsing the assistant's heading bubble - causing insertHTML to abort partway through. The visible "Overview of" / "I see you're in the" cutoffs were the prefix that did make it in before the parser blew up. All rendered styles now use only HTML 3.2-compatible CSS (single-value margin/padding, no border-radius, no max-height, no white-space).</li></ul>
         <h3>0.18.2</h3>
@@ -31,5 +33,4 @@
         <h3>0.17.0</h3>
         <ul>
             <li>Appending to the transcript now uses HTMLEditorKit.insertHTML at the document tail instead of rewriting the entire JTextPane content on every append. Fixes the "after a long reply, new messages stop showing" problem - that was a re-parse stall on the growing HTML, not an event-handling bug.</li>
-            <li>When a stream closes without a stop_reason (transient network blip, server-side cutoff), the transcript now shows a small amber "(stream ended unexpectedly...)" note instead of leaving you guessing.</li>
-            <li>New brain i
+            <li>When a stream closes 
