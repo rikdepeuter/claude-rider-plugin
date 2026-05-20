@@ -3,6 +3,7 @@ package com.rixit.claude.api
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.intellij.openapi.diagnostic.Logger
 import com.rixit.claude.settings.ClaudeSettings
 import java.net.URI
 import java.net.http.HttpClient
@@ -23,6 +24,8 @@ class ClaudeApiException(message: String) : RuntimeException(message)
  * Both methods block the calling thread — call them off the EDT.
  */
 object ClaudeApiClient {
+
+    private val LOG = Logger.getInstance(ClaudeApiClient::class.java)
 
     private val http: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(20))
@@ -80,28 +83,65 @@ object ClaudeApiClient {
 
         val full = StringBuilder()
         var stopReason: String? = null
+        var eventCount = 0
         try {
             resp.body().bufferedReader(Charsets.UTF_8).use { reader ->
+                // Proper SSE parser: accumulate "data:" lines into a buffer
+                // and dispatch the event only on a blank line. The previous
+                // implementation dispatched per-line, which would lose
+                // content if Anthropic ever split one event's data across
+                // multiple "data:" lines (allowed by the spec).
                 var currentEvent: String? = null
+                val dataBuffer = StringBuilder()
+
+                fun dispatch() {
+                    if (dataBuffer.isEmpty()) return
+                    val data = dataBuffer.toString()
+                    eventCount++
+                    when (currentEvent) {
+                        "content_block_delta" -> handleDelta(data, full, onDelta)
+                        "message_delta" -> parseStopReason(data)?.let { stopReason = it }
+                    }
+                    dataBuffer.setLength(0)
+                }
+
                 while (true) {
                     val line = reader.readLine() ?: break
                     when {
-                        line.startsWith("event:") -> currentEvent = line.substring(6).trim()
-                        line.startsWith("data:")  -> {
-                            val data = line.substring(5).trim()
-                            when (currentEvent) {
-                                "content_block_delta" -> handleDelta(data, full, onDelta)
-                                "message_delta" -> {
-                                    parseStopReason(data)?.let { stopReason = it }
-                                }
-                            }
+                        line.startsWith(":") -> {
+                            // SSE comment - ignore.
                         }
-                        line.isEmpty()             -> currentEvent = null
+                        line.startsWith("event:") -> currentEvent = line.substring(6).trim()
+                        line.startsWith("data:") -> {
+                            // SSE: multiple data: lines are joined with newlines.
+                            if (dataBuffer.isNotEmpty()) dataBuffer.append('\n')
+                            // The spec strips exactly one leading space if present.
+                            val payload = line.substring(5).let {
+                                if (it.startsWith(" ")) it.substring(1) else it
+                            }
+                            dataBuffer.append(payload)
+                        }
+                        line.isEmpty() -> {
+                            dispatch()
+                            currentEvent = null
+                        }
                     }
                 }
+                // Flush a final event with no trailing blank line.
+                dispatch()
+            }
+            LOG.info(
+                "Stream done: events=$eventCount textLen=${full.length} stopReason=$stopReason"
+            )
+            if (stopReason == null && full.length < 200) {
+                LOG.warn(
+                    "Stream ended unexpectedly with short response (no stop_reason). " +
+                        "Text was: ${full.toString().take(500)}"
+                )
             }
             onDone(full.toString(), stopReason)
         } catch (e: Exception) {
+            LOG.warn("Stream error after $eventCount events, ${full.length} chars", e)
             onError(ClaudeApiException("Stream error: ${e.message}"))
         }
     }
@@ -169,50 +209,4 @@ object ClaudeApiClient {
         val builder = HttpRequest.newBuilder()
             .uri(URI.create(settings.state.baseUrl.trimEnd('/') + "/v1/messages"))
             .timeout(Duration.ofSeconds(if (stream) 300 else 180))
-            .header("Content-Type", "application/json")
-            .header("x-api-key", apiKey)
-            .header("anthropic-version", "2023-06-01")
-            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
-        if (stream) builder.header("Accept", "text/event-stream")
-        return builder.build()
-    }
-
-    private fun serializeMessage(m: ApiMessage): Map<String, Any> {
-        // If the entire message is a single Text block, send it as a simple
-        // string — that's the most common case and the most readable wire form.
-        if (m.content.size == 1 && m.content[0] is ApiContent.Text) {
-            return mapOf("role" to m.role, "content" to (m.content[0] as ApiContent.Text).text)
-        }
-        return mapOf("role" to m.role, "content" to m.content.map { serializeBlock(it) })
-    }
-
-    private fun serializeBlock(b: ApiContent): Map<String, Any> = when (b) {
-        is ApiContent.Text -> mapOf("type" to "text", "text" to b.text)
-        is ApiContent.Image -> mapOf(
-            "type" to "image",
-            "source" to mapOf(
-                "type" to "base64",
-                "media_type" to b.mediaType,
-                "data" to b.base64Data
-            )
-        )
-        is ApiContent.ToolUse -> mapOf(
-            "type" to "tool_use",
-            "id" to b.id,
-            "name" to b.name,
-            // Gson serializes JsonObject as-is when we hand it back.
-            "input" to b.input
-        )
-        is ApiContent.ToolResult -> mapOf(
-            "type" to "tool_result",
-            "tool_use_id" to b.toolUseId,
-            "content" to b.content,
-            "is_error" to b.isError
-        )
-    }
-
-    // -- Response parsing ------------------------------------------------------
-
-    private fun parseResponse(json: String): AssistantTurn {
-        val root = JsonParser.parseString(json).asJsonObject
-        val stopReason = root.get("stop_reason")?.takeIf { !it.isJso
+            .header("Content-Type", "applicati
